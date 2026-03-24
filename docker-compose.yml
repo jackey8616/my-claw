@@ -1,0 +1,31 @@
+services:
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-app
+    restart: always
+    env_file: .env
+    expose:
+      - "18789"
+    volumes:
+      - ./openclaw/data:/home/node/.openclaw
+      - ./openclaw/skills:/home/node/skills
+    networks:
+      - openclaw-net
+
+  caddy:
+    image: caddy:latest
+    container_name: openclaw-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/data:/data
+      - ./caddy/caddy/config:/config
+    networks:
+      - openclaw-net
+
+networks:
+  openclaw-net:
+    driver: bridge

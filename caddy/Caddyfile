@@ -1,0 +1,6 @@
+[domain] {
+    reverse_proxy openclaw:18789 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+}
