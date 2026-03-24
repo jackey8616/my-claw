@@ -3,7 +3,6 @@ services:
     image: ghcr.io/openclaw/openclaw:latest
     container_name: openclaw-app
     restart: always
-    env_file: .env
     expose:
       - "18789"
     volumes:
