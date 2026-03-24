@@ -4,7 +4,12 @@ sudo usermod -aG docker $USER
 
 mkdir -p openclaw/data
 mkdir -p openclaw/skills
+sudo chmod -R 775 openclaw && sudo chown -R 1000:1000 openclaw
+docker run -it --rm \
+  -v $(pwd)/openclaw/data:/home/node/.openclaw \
+  ghcr.io/openclaw/openclaw:latest \
+  npx openclaw onboard
+
 mkdir -p caddy/data
 mkdir -p caddy/config
-sudo chmod -R 775 openclaw && sudo chown -R 1000:1000 openclaw
 sudo chmod -R 775 caddy && sudo chown -R 1000:1000 caddy
