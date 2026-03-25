@@ -37,7 +37,7 @@ services:
       - TZ=UTC
     volumes:
       - ./syncthing/config:/config
-      - ./openclaw/obsidian-data:/data/obsidian_vault
+      - ./openclaw/obsidian-data:/data/obsidian-data
     ports:
       - "22000:22000"
       - "21027:21027/udp"
