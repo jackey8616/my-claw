@@ -8,6 +8,7 @@ services:
       - "18789"
     volumes:
       - ./openclaw/data:/home/node/.openclaw
+      - ./openclaw/obsidian-data:/home/node/obsidian-data
       - ./openclaw/skills:/home/node/skills
     networks:
       - openclaw-net
@@ -25,6 +26,21 @@ services:
       - ./caddy/caddy/config:/config
     networks:
       - openclaw-net
+  
+  obsidian-vault:
+    image: linuxserver/syncthing
+    container_name: openclaw-obsidian
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./syncthing/config:/config
+      - ./openclaw/obsidian-data:/data/obsidian_vault
+    ports:
+      - "22000:22000"
+      - "21027:21027/udp"
 
 networks:
   openclaw-net:
