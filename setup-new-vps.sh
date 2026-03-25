@@ -13,7 +13,7 @@ sudo usermod -aG docker $USER
 
 echo "Managing Syncthing for Obsidian"
 mkdir -p openclaw/obsidian-vault
-docker compose up -d openclaw-obsidian
+docker compose up -d obsidian-vault
 sleep 8
 
 SYNCTHING_CONFIG_FILE="./syncthing/config/config.xml"
@@ -70,4 +70,7 @@ echo "Managing Caddy for Reverse-Proxy"
 mkdir -p caddy/data
 mkdir -p caddy/config
 sudo chmod -R 775 caddy && sudo chown -R 1000:1000 caddy
-sed -i "s|[domain]|$REVERSE_DOMAIN_PROXY|g" "./Caddyfile"
+sed -i "s|\[domain\]|$REVERSE_DOMAIN_PROXY|g" "./Caddyfile"
+
+echo "Up all services"
+docker compose up -d
