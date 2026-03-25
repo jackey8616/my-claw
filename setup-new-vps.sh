@@ -1,13 +1,17 @@
 #!/bin/bash
 REMOTE_DEVICE_ID=""
 VAULT_ID=""
+REVERSE_PROXY_DOMAIN=""
 read -p "REMOTE_DEVICE_ID: " REMOTE_DEVICE_ID
 read -p "VAULT_ID: " VAULT_ID
+read -p "REVERSE_PROXY_DOMAIN: " REVERSE_PROXY_DOMAIN
 
+echo "Updating apt"
 sudo apt update && sudo apt upgrade -y
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
+echo "Managing Syncthing for Obsidian"
 mkdir -p openclaw/obsidian-vault
 docker compose up -d openclaw-obsidian
 sleep 8
@@ -49,7 +53,10 @@ docker exec openclaw-obsidian curl -s -X POST \
     ]
   }" \
   http://127.0.0.1:8384/rest/config/folders
+sleep 8
+docker compose down
 
+echo "Managing OpenClaw"
 mkdir -p openclaw/data
 mkdir -p openclaw/skills
 sudo chmod -R 775 openclaw && sudo chown -R 1000:1000 openclaw
@@ -59,6 +66,8 @@ docker run -it --rm \
   ghcr.io/openclaw/openclaw:latest \
   npx openclaw onboard
 
+echo "Managing Caddy for Reverse-Proxy"
 mkdir -p caddy/data
 mkdir -p caddy/config
 sudo chmod -R 775 caddy && sudo chown -R 1000:1000 caddy
+sed -i "s|[domain]|$REVERSE_DOMAIN_PROXY|g" "./Caddyfile"
