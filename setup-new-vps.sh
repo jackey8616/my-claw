@@ -64,6 +64,7 @@ export WORKDIR="$OPENCLAW_WORKDIR"
 run_as_openclaw() {
   set -e
   cd "$WORKDIR"
+  mkdir -p "$HOME/.docker"
 
   # ============================================================
   # 4. Syncthing Setup（Obsidian Vault）
