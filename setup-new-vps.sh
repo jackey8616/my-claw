@@ -31,6 +31,8 @@ elif id -u 1000 &>/dev/null; then
   exit 1
 else
   useradd -m -u 1000 -s /bin/bash openclaw
+  mkdir -p /home/openclaw
+  chown openclaw:openclaw /home/openclaw
   echo "    openclaw create success（UID=1000）"
 fi
 
