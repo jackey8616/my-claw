@@ -1,10 +1,14 @@
 #!/bin/bash
+if [ -z "$BASH_VERSION" ]; then
+  echo "Error: Please run with bash: bash ./setup-new-vps.sh"
+  exit 1
+fi
 set -e
 
 # ============================================================
 # setup-new-vps.sh
 # Deploy OpenClaw in a whole new VPS(run with root)
-# Usage: sudo sh ./setup-new-vps.sh
+# Usage: bash ./setup-new-vps.sh or ./setup-new-vps.sh
 # ============================================================
 
 REMOTE_DEVICE_ID=""
