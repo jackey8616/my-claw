@@ -46,11 +46,15 @@ usermod -aG docker openclaw
 echo "    openclaw added docker group"
 
 # ============================================================
-# 3. Change owner of current working directory to user openclaw
+# 3. Change working directory to user openclaw's home
 # ============================================================
+echo "    Changing pwd to user openclaw's home directory"
 WORKDIR=$(pwd)
-chown -R openclaw:openclaw "$WORKDIR"
-echo "    Working directory $WORKDIR is now own by user openclaw"
+OPENCLAW_WORKDIR="/home/openclaw/$(basename $WORKDIR)"
+mv "$WORKDIR" "$OPENCLAW_WORKDIR"
+chown -R openclaw:openclaw "$OPENCLAW_WORKDIR"
+cd "$OPENCLAW_WORKDIR"
+export WORKDIR="$OPENCLAW_WORKDIR"
 
 
 # ============================================================
