@@ -91,9 +91,10 @@ run_as_openclaw() {
   # Getting DeviceID for latter pairing
   DEVICE_ID=$(docker exec openclaw-obsidian curl -s \
     -H "X-Api-Key: $API_KEY" http://127.0.0.1:8384/rest/system/status | jq -r '.myID')
-  echo "    本機 Syncthing Device ID: $DEVICE_ID"
+  echo "    This machine's Syncthing Device ID: $DEVICE_ID"
 
   # Add remote device
+  echo "    Setting remote device"
   docker exec openclaw-obsidian curl -s -X POST \
     -H "X-API-Key: $API_KEY" \
     -H "Content-Type: application/json" \
@@ -105,6 +106,7 @@ run_as_openclaw() {
     http://127.0.0.1:8384/rest/config/devices
 
   # Add Obsidian Vault folder
+  echo "    Setting vault folder"
   docker exec openclaw-obsidian curl -s -X POST \
     -H "X-API-Key: $API_KEY" \
     -H "Content-Type: application/json" \
@@ -151,7 +153,13 @@ run_as_openclaw() {
   docker compose up -d
 
   # ============================================================
-  # 8. Setup OpenClaw allowed Origin for WebUI
+  # 8. Setup OpenClaw LAN mode
+  # ============================================================
+  echo "==> Setup LAN mode"
+  docker exec -ti openclaw-app openclaw config set gateway.bind lan
+
+  # ============================================================
+  # 9. Setup OpenClaw allowed Origin for WebUI
   # ============================================================
   echo "==> Setup allowedOrigins"
   # Wait all containers ready
@@ -165,17 +173,18 @@ run_as_openclaw() {
   echo "    allowedOrigins added https://$REVERSE_PROXY_DOMAIN"
 
   # ============================================================
-  # 9. Pair new device for login OpenClaw UI
+  # 10. Pair new device for login OpenClaw UI
   # ============================================================
   echo "==> Gateway UI Pairing"
   echo "    Open OpenClaw UI in another device in order to send pairing request..."
+  read -p "Press Enter after you opened ui and login ..."
   docker exec -ti openclaw-app openclaw devices list
 
   PAIRING_REQUEST_ID=""
+  echo "    Enter PAIRING_REQUEST_ID from above command to continue with auto-approve."
   read -p "PAIRING_REQUEST_ID: " PAIRING_REQUEST_ID
   docker exec -ti openclaw-app openclaw devices approve "$PAIRING_REQUEST_ID"
 
-  echo ""
   echo "==> Deploy completed!"
   echo "    OpenClaw is running in https://$REVERSE_PROXY_DOMAIN"
 }
@@ -186,11 +195,11 @@ TEMP_SCRIPT=$(mktemp)
 declare -f run_as_openclaw > "$TEMP_SCRIPT"
 echo "run_as_openclaw" >> "$TEMP_SCRIPT"
 chown openclaw:openclaw "$TEMP_SCRIPT"
-sudo -u openclaw -E sg docker -c bash "$TEMP_SCRIPT"
+sudo -u openclaw -E sg docker -c "bash $TEMP_SCRIPT"
 rm -f "$TEMP_SCRIPT"
 
 # ============================================================
-# 10. Optional: disable root SSH
+# 11. Optional: disable root SSH
 # ============================================================
 echo ""
 echo "========================================================"
