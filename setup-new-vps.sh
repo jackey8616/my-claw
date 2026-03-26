@@ -181,11 +181,12 @@ run_as_openclaw() {
 }
 
 export WORKDIR REMOTE_DEVICE_ID VAULT_ID REVERSE_PROXY_DOMAIN
+export HOME="/home/openclaw"
 TEMP_SCRIPT=$(mktemp)
 declare -f run_as_openclaw > "$TEMP_SCRIPT"
 echo "run_as_openclaw" >> "$TEMP_SCRIPT"
 chown openclaw:openclaw "$TEMP_SCRIPT"
-sudo -u openclaw -E bash "$TEMP_SCRIPT"
+sudo -u openclaw -E sg docker -c bash "$TEMP_SCRIPT"
 rm -f "$TEMP_SCRIPT"
 
 # ============================================================
