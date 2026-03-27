@@ -170,6 +170,8 @@ run_as_openclaw() {
     ./openclaw/data/openclaw.json > temp.json \
     && mv temp.json ./openclaw/data/openclaw.json
 
+  docker exec -ti openclaw-app openclaw gateway restart
+
   echo "    allowedOrigins added https://$REVERSE_PROXY_DOMAIN"
 
   # ============================================================
