@@ -108,6 +108,8 @@ run_as_openclaw() {
   # 4. Syncthing Setup（Obsidian Vault）
   # ============================================================
   echo "==> Setting Syncthing（Obsidian Vault）"
+  mkdir -p vault
+
   docker compose up -d obsidian-vault
   sleep 8
 
