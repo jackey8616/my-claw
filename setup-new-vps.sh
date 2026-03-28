@@ -167,19 +167,25 @@ run_as_openclaw() {
     npx openclaw onboard
 
   # ============================================================
-  # 6. Run all services
+  # 6. Caddy Reverse Proxy
+  # ============================================================
+  echo "==> Setup Caddy"
+  sed -i "s|\[domain\]|$REVERSE_PROXY_DOMAIN|g" "./Caddyfile"
+
+  # ============================================================
+  # 7. Run all services
   # ============================================================
   echo "==> Run all services"
   docker compose up -d
 
   # ============================================================
-  # 7. Setup OpenClaw LAN mode
+  # 8. Setup OpenClaw LAN mode
   # ============================================================
   echo "==> Setup LAN mode"
   docker exec -ti openclaw-app openclaw config set gateway.bind lan
 
   # ============================================================
-  # 8. Setup OpenClaw allowed Origin for WebUI
+  # 9. Setup OpenClaw allowed Origin for WebUI
   # ============================================================
   echo "==> Setup allowedOrigins"
   # Wait all containers ready
@@ -195,7 +201,7 @@ run_as_openclaw() {
   echo "    allowedOrigins added https://$REVERSE_PROXY_DOMAIN"
 
   # ============================================================
-  # 9. Pair new device for login OpenClaw UI
+  # 10. Pair new device for login OpenClaw UI
   # ============================================================
   echo "==> Gateway UI Pairing"
   echo "    Open OpenClaw UI in another device in order to send pairing request..."
@@ -221,7 +227,7 @@ sudo -u openclaw -E sg docker -c "bash $TEMP_SCRIPT"
 rm -f "$TEMP_SCRIPT"
 
 # ============================================================
-# 10. Optional: disable root SSH
+# 11. Optional: disable root SSH
 # ============================================================
 echo ""
 echo "========================================================"
