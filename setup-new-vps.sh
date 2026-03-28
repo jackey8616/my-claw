@@ -177,7 +177,7 @@ run_as_openclaw() {
   # ============================================================
   echo "==> Setup Caddy"
   sed -i "s|\[domain\]|$REVERSE_PROXY_DOMAIN|g" "./caddy/Caddyfile"
-  set -i "s|\[ca\]|$CA|g" "./caddy/Caddyfile"
+  sed -i "s|\[ca\]|$CA|g" "./caddy/Caddyfile"
 
   # ============================================================
   # 7. Run all services
