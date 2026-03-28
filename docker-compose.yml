@@ -4,11 +4,13 @@ services:
     container_name: openclaw-app
     restart: always
     env_file: .env
+    environment:
+      - NPM_CONFIG_PREFIX=/home/node/.npm-global
     expose:
       - "18789"
     volumes:
       - ./openclaw/data:/home/node/.openclaw
-      - ./openclaw/obsidian-data:/home/node/obsidian-data
+      - ./openclaw/obsidian-data:/home/node/vault
       - ./openclaw/skills:/home/node/skills
     networks:
       - openclaw-net

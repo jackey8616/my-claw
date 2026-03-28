@@ -47,6 +47,7 @@ load_env () {
 REVERSE_PROXY_DOMAIN=$(load_env "REVERSE_PROXY_DOMAIN")
 REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID")
 VAULT_ID=$(load_env "VAULT_ID")
+PERSONA_PATH=$(load_env "PERSONA_PATH")
 
 # ============================================================
 # 1. Create dedicate user openclaw (UID=1000, same as node user inside the openclaw container)
@@ -183,6 +184,7 @@ run_as_openclaw() {
   # ============================================================
   echo "==> Setup LAN mode"
   docker exec -ti openclaw-app openclaw config set gateway.bind lan
+  docker exec -ti openclaw-app openclaw config set agents.defaults.workspace $PERSONA_PATH
 
   # ============================================================
   # 9. Setup OpenClaw allowed Origin for WebUI
