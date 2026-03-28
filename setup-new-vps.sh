@@ -190,7 +190,6 @@ run_as_openclaw() {
   # ============================================================
   echo "==> Setup LAN mode"
   docker exec -ti openclaw-app openclaw config set gateway.bind lan
-  sleep 5
   docker exec -ti openclaw-app openclaw config set agents.defaults.workspace $PERSONA_PATH
 
   # ============================================================
@@ -226,7 +225,7 @@ run_as_openclaw() {
   echo "    OpenClaw is running in https://$REVERSE_PROXY_DOMAIN"
 }
 
-export WORKDIR REMOTE_DEVICE_ID VAULT_ID REVERSE_PROXY_DOMAIN
+export WORKDIR REVERSE_PROXY_DOMAIN REMOTE_DEVICE_ID VAULT_ID PERSONA_PATH CA 
 export HOME="/home/openclaw"
 TEMP_SCRIPT=$(mktemp)
 declare -f run_as_openclaw > "$TEMP_SCRIPT"
