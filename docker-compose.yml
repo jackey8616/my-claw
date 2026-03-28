@@ -14,16 +14,17 @@ services:
       - openclaw-net
 
   caddy:
-    image: caddy:latest
+    build: ./caddy
     container_name: openclaw-proxy
     restart: always
+    env_file: .env
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - ./caddy/data:/data
-      - ./caddy/caddy/config:/config
+      - ./caddy/config:/config
     networks:
       - openclaw-net
   

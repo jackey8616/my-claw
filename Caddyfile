@@ -1,4 +1,9 @@
-[domain] {
+{
+    email {env.INSTALLER_EMAIL}
+    acme_dns cloudflare {env.CF_API_TOKEN}
+}
+
+{env.REVERSE_PROXY_DOMAIN} {
     reverse_proxy openclaw:18789 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}

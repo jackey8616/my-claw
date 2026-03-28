@@ -11,13 +11,42 @@ set -e
 # Usage: bash ./setup-new-vps.sh or ./setup-new-vps.sh
 # ============================================================
 
-REMOTE_DEVICE_ID=""
-VAULT_ID=""
-REVERSE_PROXY_DOMAIN=""
+update_env () {
+  # Update var_name with given value, if exists, replace it, otherwise insert
+  local var_name=$1
+  local var_value=$2
 
-read -p "REMOTE_DEVICE_ID: " REMOTE_DEVICE_ID
-read -p "VAULT_ID: " VAULT_ID
-read -p "REVERSE_PROXY_DOMAIN: " REVERSE_PROXY_DOMAIN
+  if grep -q "^${var_name}=" .env 2>/dev/null; then
+        sed -i "s|^${var_name}=.*|${var_name}=\"${var_value}\"|" .env
+    else
+        echo "${var_name}=\"${var_value}\"" >> .env
+    fi
+}
+
+load_env () {
+  # Load var from .env, if exists, ask overwrite or not, otherwise ask a value.
+  local env_var_name=$1
+  local current_val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2-)
+
+  if [[ -n "$current_val" ]]; then
+    read -p "$env_var_name already exists in .env: \"$current_val\", wanna overwrite? (y/N): " overwrite
+    if [[ "$overwrite" =~ ^[Yy]$ ]]; then
+      read -p "New $env_var_name value: " new_val
+      update_env "$env_var_name" "$new_val"
+      echo "$new_val"
+    else
+      echo "$current_val"
+    fi
+  else
+    read -p "Missing $env_var_name in .env, please enter $env_var_name:" new_val
+    update_env "$env_var_name" "$new_val"
+    echo "$new_val"
+  fi
+}
+
+REVERSE_PROXY_DOMAIN=$(load_env "REVERSE_PROXY_DOMAIN")
+REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID")
+VAULT_ID=$(load_env "VAULT_ID")
 
 # ============================================================
 # 1. Create dedicate user openclaw (UID=1000, same as node user inside the openclaw container)
@@ -138,28 +167,19 @@ run_as_openclaw() {
     npx openclaw onboard
 
   # ============================================================
-  # 6. Caddy Reverse Proxy
-  # ============================================================
-  echo "==> Setup Caddy"
-  mkdir -p caddy/data
-  mkdir -p caddy/config
-
-  sed -i "s|\[domain\]|$REVERSE_PROXY_DOMAIN|g" "./Caddyfile"
-
-  # ============================================================
-  # 7. Run all services
+  # 6. Run all services
   # ============================================================
   echo "==> Run all services"
   docker compose up -d
 
   # ============================================================
-  # 8. Setup OpenClaw LAN mode
+  # 7. Setup OpenClaw LAN mode
   # ============================================================
   echo "==> Setup LAN mode"
   docker exec -ti openclaw-app openclaw config set gateway.bind lan
 
   # ============================================================
-  # 9. Setup OpenClaw allowed Origin for WebUI
+  # 8. Setup OpenClaw allowed Origin for WebUI
   # ============================================================
   echo "==> Setup allowedOrigins"
   # Wait all containers ready
@@ -175,7 +195,7 @@ run_as_openclaw() {
   echo "    allowedOrigins added https://$REVERSE_PROXY_DOMAIN"
 
   # ============================================================
-  # 10. Pair new device for login OpenClaw UI
+  # 9. Pair new device for login OpenClaw UI
   # ============================================================
   echo "==> Gateway UI Pairing"
   echo "    Open OpenClaw UI in another device in order to send pairing request..."
@@ -201,7 +221,7 @@ sudo -u openclaw -E sg docker -c "bash $TEMP_SCRIPT"
 rm -f "$TEMP_SCRIPT"
 
 # ============================================================
-# 11. Optional: disable root SSH
+# 10. Optional: disable root SSH
 # ============================================================
 echo ""
 echo "========================================================"
