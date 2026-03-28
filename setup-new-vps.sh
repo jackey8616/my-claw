@@ -70,11 +70,16 @@ fi
 # ============================================================
 # 2. Install Docker
 # ============================================================
-echo "==> Update packages & install Docker"
+echo "==> Check & install Docker if not present"
 apt update && apt upgrade -y
-curl -fsSL https://get.docker.com | sh
+if command -v docker &>/dev/null; then
+    echo "    Docker already installed, skipping"
+else
+    echo "    Installing Docker..."
+    curl -fsSL https://get.docker.com | sh
+fi
 
-# Add openclaw into docker group in order to run docker without privilege. 
+# Add openclaw into docker group in order to run docker without privilege.
 usermod -aG docker openclaw
 echo "    openclaw added docker group"
 
