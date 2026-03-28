@@ -16,10 +16,9 @@ services:
       - openclaw-net
 
   caddy:
-    build: ./caddy
+    image: caddy:latest
     container_name: openclaw-proxy
     restart: always
-    env_file: .env
     ports:
       - "80:80"
       - "443:443"
