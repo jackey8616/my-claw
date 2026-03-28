@@ -29,7 +29,7 @@ load_env () {
   local current_val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2-)
 
   if [[ -n "$current_val" ]]; then
-    read -p "$env_var_name already exists in .env: \"$current_val\", wanna overwrite? (y/N): " overwrite
+    read -p "$env_var_name already exists in .env, wanna overwrite? (y/N): " overwrite
     if [[ "$overwrite" =~ ^[Yy]$ ]]; then
       read -p "New $env_var_name value: " new_val
       update_env "$env_var_name" "$new_val"
