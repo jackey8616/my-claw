@@ -1,5 +1,5 @@
 {
-    acme_ca {env.CA}
+    acme_ca [ca]
 }
 
 [domain] {

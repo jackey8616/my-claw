@@ -48,6 +48,7 @@ REVERSE_PROXY_DOMAIN=$(load_env "REVERSE_PROXY_DOMAIN")
 REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID")
 VAULT_ID=$(load_env "VAULT_ID")
 PERSONA_PATH=$(load_env "PERSONA_PATH")
+CA=$(load_env "CA")
 
 # ============================================================
 # 1. Create dedicate user openclaw (UID=1000, same as node user inside the openclaw container)
@@ -102,8 +103,6 @@ run_as_openclaw() {
   # 4. Syncthing Setup（Obsidian Vault）
   # ============================================================
   echo "==> Setting Syncthing（Obsidian Vault）"
-  mkdir -p openclaw/obsidian-data
-
   docker compose up -d obsidian-vault
   sleep 8
 
@@ -152,7 +151,6 @@ run_as_openclaw() {
     http://127.0.0.1:8384/rest/config/folders
 
   sleep 8
-  docker compose down
 
   # ============================================================
   # 5. Init OpenClaw
@@ -172,6 +170,7 @@ run_as_openclaw() {
   # ============================================================
   echo "==> Setup Caddy"
   sed -i "s|\[domain\]|$REVERSE_PROXY_DOMAIN|g" "./caddy/Caddyfile"
+  set -i "s|\[ca\]|$CA|g" "./caddy/Caddyfile"
 
   # ============================================================
   # 7. Run all services
@@ -184,6 +183,7 @@ run_as_openclaw() {
   # ============================================================
   echo "==> Setup LAN mode"
   docker exec -ti openclaw-app openclaw config set gateway.bind lan
+  sleep 5
   docker exec -ti openclaw-app openclaw config set agents.defaults.workspace $PERSONA_PATH
 
   # ============================================================
