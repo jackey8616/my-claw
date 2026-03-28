@@ -10,8 +10,8 @@ services:
       - "18789"
     volumes:
       - ./openclaw/data:/home/node/.openclaw
-      - ./openclaw/obsidian-data:/home/node/vault
       - ./openclaw/skills:/home/node/skills
+      - ./vault:/home/node/vault
     networks:
       - openclaw-net
 
@@ -39,7 +39,7 @@ services:
       - TZ=UTC
     volumes:
       - ./syncthing/config:/config
-      - ./openclaw/obsidian-data:/data/obsidian-data
+      - ./vault:/data/obsidian-data
     ports:
       - "22000:22000"
       - "21027:21027/udp"
