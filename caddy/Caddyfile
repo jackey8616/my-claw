@@ -1,6 +1,4 @@
 {
-    email {env.INSTALLER_EMAIL}
-    acme_dns cloudflare {env.CF_API_TOKEN}
     acme_ca {env.CA}
 }
 
