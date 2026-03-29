@@ -108,12 +108,12 @@ run_as_openclaw() {
   # 4. Syncthing Setup（Obsidian Vault）
   # ============================================================
   echo "==> Setting Syncthing（Obsidian Vault）"
-  mkdir -p vault
+  mkdir -p /home/openclaw/openclaw-data/vault
 
   docker compose up -d obsidian-vault
   sleep 8
 
-  SYNCTHING_CONFIG_FILE="./syncthing/config/config.xml"
+  SYNCTHING_CONFIG_FILE="/home/openclaw/openclaw-data/syncthing/config.xml"
   if [ ! -f "$SYNCTHING_CONFIG_FILE" ]; then
     echo "Error: Unable to find $SYNCTHING_CONFIG_FILE"
     exit 1
@@ -163,12 +163,12 @@ run_as_openclaw() {
   # 5. Init OpenClaw
   # ============================================================
   echo "==> Init OpenClaw"
-  mkdir -p openclaw/data
+  mkdir -p /home/openclaw/openclaw-data/openclaw
   mkdir -p openclaw/skills
 
   docker run -it --rm \
     --env-file "$(pwd)/.env" \
-    -v "$(pwd)/openclaw/data:/home/node/.openclaw" \
+    -v "/home/openclaw/openclaw-data/openclaw:/home/node/.openclaw" \
     ghcr.io/openclaw/openclaw:latest \
     npx openclaw onboard
 
@@ -186,30 +186,32 @@ run_as_openclaw() {
   docker compose up -d
 
   # ============================================================
-  # 8. Setup OpenClaw LAN mode
+  # 8. Setup OpenClaw
   # ============================================================
   echo "==> Setup LAN mode"
   docker exec -ti openclaw-app openclaw config set gateway.bind lan
   docker exec -ti openclaw-app openclaw config set agents.defaults.workspace $PERSONA_PATH
 
   # ============================================================
-  # 9. Setup OpenClaw allowed Origin for WebUI
+  # 8.1 Setup OpenClaw: allowed Origin for WebUI
   # ============================================================
-  echo "==> Setup allowedOrigins"
-  # Wait all containers ready
-  echo "Sleep 5"
-  sleep 5
-
+  echo "====> Setup allowedOrigins"
   jq ".gateway.controlUi.allowedOrigins += [\"https://$REVERSE_PROXY_DOMAIN\"]" \
-    ./openclaw/data/openclaw.json > temp.json \
-    && mv temp.json ./openclaw/data/openclaw.json
+    /home/openclaw/openclaw-data/openclaw/openclaw.json > temp.json \
+    && mv temp.json /home/openclaw/openclaw-data/openclaw/openclaw.json
+
+  # ============================================================
+  # 8.2 Setup OpenClaw: memorySearch path
+  # ============================================================
+  echo "====> Setup memorySearch"
+  jq ".agents.defaults.memorySearch.extraPaths = [\"/home/node/vault/04-Daily-Notes\"]" \
+    /home/openclaw/openclaw-data/openclaw/openclaw.json > temp.json \
+    && mv temp.json /home/openclaw/openclaw-data/openclaw/openclaw.json
 
   docker compose restart openclaw
 
-  echo "    allowedOrigins added https://$REVERSE_PROXY_DOMAIN"
-
   # ============================================================
-  # 10. Pair new device for login OpenClaw UI
+  # 9. Pair new device for login OpenClaw UI
   # ============================================================
   echo "==> Gateway UI Pairing"
   echo "    Open OpenClaw UI in another device in order to send pairing request..."
@@ -235,7 +237,7 @@ sudo -u openclaw -E sg docker -c "bash $TEMP_SCRIPT"
 rm -f "$TEMP_SCRIPT"
 
 # ============================================================
-# 11. Optional: disable root SSH
+# 10. Optional: disable root SSH
 # ============================================================
 echo ""
 echo "========================================================"

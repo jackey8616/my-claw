@@ -9,9 +9,10 @@ services:
     expose:
       - "18789"
     volumes:
-      - ./openclaw/data:/home/node/.openclaw
+      - /home/openclaw/openclaw-data/openclaw:/home/node/.openclaw
+      - /home/openclaw/openclaw-data/vault:/home/node/vault
       - ./openclaw/skills:/home/node/skills
-      - ./vault:/home/node/vault
+      - .:/home/node/my-claw
     networks:
       - openclaw-net
 
@@ -24,8 +25,8 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
-      - ./caddy/data:/data
-      - ./caddy/config:/config
+      - /home/openclaw/openclaw-data/caddy-data:/data
+      - /home/openclaw/openclaw-data/caddy-config:/config
     networks:
       - openclaw-net
   
@@ -38,8 +39,8 @@ services:
       - PGID=1000
       - TZ=UTC
     volumes:
-      - ./syncthing/config:/config
-      - ./vault:/data/obsidian-data
+      - /home/openclaw/openclaw-data/syncthing:/config
+      - /home/openclaw/openclaw-data/vault:/data/obsidian-data
     ports:
       - "22000:22000"
       - "21027:21027/udp"
