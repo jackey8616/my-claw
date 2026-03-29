@@ -211,23 +211,11 @@ run_as_openclaw() {
     /home/openclaw/openclaw-data/openclaw/openclaw.json > temp.json \
     && mv temp.json /home/openclaw/openclaw-data/openclaw/openclaw.json
 
-  docker compose restart openclaw
-
-  # ============================================================
-  # 9. Pair new device for login OpenClaw UI
-  # ============================================================
-  echo "==> Gateway UI Pairing"
-  echo "    Open OpenClaw UI in another device in order to send pairing request..."
-  read -p "Press Enter after you opened ui and login ..."
-  docker exec -ti openclaw-app openclaw devices list
-
-  PAIRING_REQUEST_ID=""
-  echo "    Enter PAIRING_REQUEST_ID from above command to continue with auto-approve."
-  read -p "PAIRING_REQUEST_ID: " PAIRING_REQUEST_ID
-  docker exec -ti openclaw-app openclaw devices approve "$PAIRING_REQUEST_ID"
+  docker compose down
+  sleep 5
+  docker compose up -d
 
   echo "==> Deploy completed!"
-  echo "    OpenClaw is running in https://$REVERSE_PROXY_DOMAIN"
 }
 
 export WORKDIR OPENCLAW_VERSION_TAG REVERSE_PROXY_DOMAIN REMOTE_DEVICE_ID VAULT_ID PERSONA_PATH CA 
