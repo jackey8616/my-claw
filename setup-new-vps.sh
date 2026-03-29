@@ -169,6 +169,7 @@ run_as_openclaw() {
   mkdir -p /home/openclaw/openclaw-data/openclaw
   mkdir -p openclaw/skills
 
+  docker compose build openclaw
   docker run -it --rm \
     --env-file "$(pwd)/.env" \
     -v "/home/openclaw/openclaw-data/openclaw:/home/node/.openclaw" \

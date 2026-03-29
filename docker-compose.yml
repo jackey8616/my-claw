@@ -1,6 +1,9 @@
 services:
   openclaw:
-    build: .
+    build:
+      context: .
+      args:
+        OPENCLAW_VERSION_TAG: ${OPENCLAW_VERSION_TAG}
     image: openclaw/openclaw:${OPENCLAW_VERSION_TAG}-patched
     container_name: openclaw-app
     restart: always
