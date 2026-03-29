@@ -13,6 +13,7 @@ services:
       - /home/openclaw/openclaw-data/vault:/home/node/vault
       - ./openclaw/skills:/home/node/skills
       - .:/home/node/my-claw
+      - /dev/null:/home/node/my-claw/.env
     networks:
       - openclaw-net
 
