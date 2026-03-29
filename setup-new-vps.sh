@@ -168,6 +168,7 @@ run_as_openclaw() {
   echo "==> Init OpenClaw"
   mkdir -p /home/openclaw/openclaw-data/openclaw
   mkdir -p openclaw/skills
+  mkdir -p openclaw/hooks
 
   docker compose build openclaw
   docker run -it --rm \
