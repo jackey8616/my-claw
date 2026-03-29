@@ -230,7 +230,7 @@ run_as_openclaw() {
   echo "    OpenClaw is running in https://$REVERSE_PROXY_DOMAIN"
 }
 
-export WORKDIR REVERSE_PROXY_DOMAIN REMOTE_DEVICE_ID VAULT_ID PERSONA_PATH CA 
+export WORKDIR OPENCLAW_VERSION_TAG REVERSE_PROXY_DOMAIN REMOTE_DEVICE_ID VAULT_ID PERSONA_PATH CA 
 export HOME="/home/openclaw"
 TEMP_SCRIPT=$(mktemp)
 declare -f run_as_openclaw > "$TEMP_SCRIPT"
