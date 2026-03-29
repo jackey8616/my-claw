@@ -172,7 +172,7 @@ run_as_openclaw() {
   docker run -it --rm \
     --env-file "$(pwd)/.env" \
     -v "/home/openclaw/openclaw-data/openclaw:/home/node/.openclaw" \
-    "ghcr.io/openclaw/openclaw:$OPENCLAW_VERSION_TAG" \
+    "openclaw/openclaw:$OPENCLAW_VERSION_TAG-patched" \
     npx openclaw onboard
 
   # ============================================================
