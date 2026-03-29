@@ -1,6 +1,6 @@
 services:
   openclaw:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:${OPENCLAW_VERSION_TAG}
     container_name: openclaw-app
     restart: always
     env_file: .env

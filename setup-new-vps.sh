@@ -44,6 +44,7 @@ load_env () {
   fi
 }
 
+OPENCLAW_VERSION_TAG=$(load_env "OPENCLAW_VERSION_TAG")
 REVERSE_PROXY_DOMAIN=$(load_env "REVERSE_PROXY_DOMAIN")
 REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID")
 VAULT_ID=$(load_env "VAULT_ID")
@@ -171,7 +172,7 @@ run_as_openclaw() {
   docker run -it --rm \
     --env-file "$(pwd)/.env" \
     -v "/home/openclaw/openclaw-data/openclaw:/home/node/.openclaw" \
-    ghcr.io/openclaw/openclaw:latest \
+    "ghcr.io/openclaw/openclaw:$OPENCLAW_VERSION_TAG" \
     npx openclaw onboard
 
   # ============================================================
