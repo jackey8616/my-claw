@@ -6,8 +6,6 @@ services:
     env_file: .env
     environment:
       - NPM_CONFIG_PREFIX=/home/node/.npm-global
-    mem_limit: 1g
-    memswap_limit: 1.5g
     expose:
       - "18789"
     volumes:
