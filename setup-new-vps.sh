@@ -157,6 +157,8 @@ run_as_openclaw() {
     }" \
     http://127.0.0.1:8384/rest/config/folders
 
+  read -p "Press Enter after vault is synced ..."
+  docker compose down obsidian-vault
   sleep 8
 
   # ============================================================
