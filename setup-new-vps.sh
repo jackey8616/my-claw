@@ -439,7 +439,12 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   tmux attach -t "$SESSION"
 else
   echo "Starting new Claude Code session..."
-  tmux new-session -d -s "$SESSION" -x 220 -y 50
+  tmux new-session -d -s "$SESSION" -x 220 -y 50 \
+    -e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" \
+    -e "TZ=$TZ" \
+    -e "NVM_DIR=$NVM_DIR" \
+    -e "BUN_INSTALL=$BUN_INSTALL" \
+    -e "PATH=$PATH"
   tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
   echo "Session started. Attaching..."
   tmux attach -t "$SESSION"
