@@ -106,6 +106,7 @@ fi
 # ============================================================
 info "Checking Docker..."
 apt-get update -qq && apt-get upgrade -y -qq
+apt-get install -y -qq unzip jq
 
 if command -v docker &>/dev/null; then
   warning "Docker already installed, skipping."
