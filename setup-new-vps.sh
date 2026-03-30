@@ -188,9 +188,9 @@ echo ""
 echo "  >>>  ${DEVICE_ID}  <<<"
 echo ""
 
-# Add remote device (your Mac/PC) — PUT is idempotent (create or update)
+# Add remote device (your Mac/PC)
 info "Adding remote device..."
-curl -s -X PUT \
+curl -s -X POST \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
@@ -200,9 +200,9 @@ curl -s -X PUT \
   }" \
   http://127.0.0.1:8384/rest/config/devices > /dev/null
 
-# Add Obsidian Vault folder — PUT is idempotent (create or update)
+# Add Obsidian Vault folder
 info "Adding Obsidian Vault folder..."
-curl -s -X PUT \
+curl -s -X POST \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
