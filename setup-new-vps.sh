@@ -1,243 +1,407 @@
 #!/bin/bash
 if [ -z "$BASH_VERSION" ]; then
-  echo "Error: Please run with bash: bash ./setup-new-vps.sh"
+  echo "Error: Please run with bash: bash ./setup-vps.sh"
   exit 1
 fi
 set -e
 
 # ============================================================
-# setup-new-vps.sh
-# Deploy OpenClaw in a whole new VPS(run with root)
-# Usage: bash ./setup-new-vps.sh or ./setup-new-vps.sh
+# setup-vps.sh
+# Deploy personal Claude Code assistant on a fresh VPS
+# Run as root on a fresh Ubuntu 22.04/24.04
+#
+# What this script does:
+#   1. Create a dedicated user
+#   2. Install Docker
+#   3. Start Syncthing (Docker) and sync Obsidian Vault
+#   4. Install Claude Code (native)
+#   5. Install Discord Channels plugin
+#   6. Create CLAUDE.md pointing to Persona in vault
+#   7. Create tmux startup script
 # ============================================================
 
-update_env () {
-  # Update var_name with given value, if exists, replace it, otherwise insert
+# ============================================================
+# Helpers
+# ============================================================
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+info()    { echo -e "${GREEN}==>${NC} $1"; }
+warning() { echo -e "${YELLOW}Warning:${NC} $1"; }
+error()   { echo -e "${RED}Error:${NC} $1"; exit 1; }
+pause()   { read -p "$1 [Press Enter to continue]"; }
+
+update_env() {
   local var_name=$1
   local var_value=$2
-
   if grep -q "^${var_name}=" .env 2>/dev/null; then
-        sed -i "s|^${var_name}=.*|${var_name}=\"${var_value}\"|" .env
-    else
-        echo "${var_name}=\"${var_value}\"" >> .env
-    fi
+    sed -i "s|^${var_name}=.*|${var_name}=\"${var_value}\"|" .env
+  else
+    echo "${var_name}=\"${var_value}\"" >> .env
+  fi
 }
 
-load_env () {
-  # Load var from .env, if exists, ask overwrite or not, otherwise ask a value.
+load_env() {
   local env_var_name=$1
-  local current_val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2-)
+  local prompt_text=${2:-$1}
+  local current_val
+  current_val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
 
   if [[ -n "$current_val" ]]; then
-    read -p "$env_var_name already exists in .env, wanna overwrite? (y/N): " overwrite
+    read -p "${env_var_name} already exists (${current_val:0:20}...), overwrite? (y/N): " overwrite
     if [[ "$overwrite" =~ ^[Yy]$ ]]; then
-      read -p "New $env_var_name value: " new_val
+      read -p "New ${prompt_text}: " new_val
       update_env "$env_var_name" "$new_val"
       echo "$new_val"
     else
       echo "$current_val"
     fi
   else
-    read -p "Missing $env_var_name in .env, please enter $env_var_name:" new_val
+    read -p "Enter ${prompt_text}: " new_val
     update_env "$env_var_name" "$new_val"
     echo "$new_val"
   fi
 }
 
-OPENCLAW_VERSION_TAG=$(load_env "OPENCLAW_VERSION_TAG")
-REVERSE_PROXY_DOMAIN=$(load_env "REVERSE_PROXY_DOMAIN")
-REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID")
-VAULT_ID=$(load_env "VAULT_ID")
-PERSONA_PATH=$(load_env "PERSONA_PATH")
-CA=$(load_env "CA")
+# ============================================================
+# Load config from .env
+# ============================================================
+touch .env
+
+info "Loading configuration..."
+AGENT_USER=$(load_env "AGENT_USER" "dedicated user name (e.g. myagent)")
+REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID" "Syncthing Device ID of your Mac/PC")
+VAULT_ID=$(load_env "VAULT_ID" "Syncthing Folder ID of your Obsidian Vault")
+VAULT_PATH=$(load_env "VAULT_PATH" "Vault path inside Syncthing container (e.g. /data/vault)")
+DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
+CLAUDE_OAUTH_TOKEN=$(load_env "CLAUDE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
+TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
+
+# Derived paths
+AGENT_HOME="/home/${AGENT_USER}"
+VAULT_LOCAL="${AGENT_HOME}/vault"
+WORKDIR=$(pwd)
+AGENT_WORKDIR="${AGENT_HOME}/$(basename $WORKDIR)"
 
 # ============================================================
-# 1. Create dedicate user openclaw (UID=1000, same as node user inside the openclaw container)
+# 1. Create dedicated agent user
 # ============================================================
-echo "==> Create openclaw user"
+info "Creating agent user: ${AGENT_USER}"
 
-if id "openclaw" &>/dev/null; then
-  echo "    User openclaw exists, skip."
-elif id -u 1000 &>/dev/null; then
-  echo "    Warning: UID 1000 has been occupied by $(id -nu 1000), unable to create openclaw user."
-  exit 1
+if id "$AGENT_USER" &>/dev/null; then
+  warning "User ${AGENT_USER} already exists, skipping."
 else
-  useradd -m -u 1000 -s /bin/bash openclaw
-  mkdir -p /home/openclaw
-  chown openclaw:openclaw /home/openclaw
-  echo "    openclaw create success（UID=1000）"
+  useradd -m -s /bin/bash "$AGENT_USER"
+  mkdir -p "$AGENT_HOME"
+  chown "${AGENT_USER}:${AGENT_USER}" "$AGENT_HOME"
+  info "User ${AGENT_USER} created."
 fi
 
 # ============================================================
 # 2. Install Docker
 # ============================================================
-echo "==> Check & install Docker if not present"
-apt update && apt upgrade -y
+info "Checking Docker..."
+apt-get update -qq && apt-get upgrade -y -qq
+
 if command -v docker &>/dev/null; then
-    echo "    Docker already installed, skipping"
+  warning "Docker already installed, skipping."
 else
-    echo "    Installing Docker..."
-    curl -fsSL https://get.docker.com | sh
+  info "Installing Docker..."
+  curl -fsSL https://get.docker.com | sh
 fi
 
-# Add openclaw into docker group in order to run docker without privilege.
-usermod -aG docker openclaw
-echo "    openclaw added docker group"
+usermod -aG docker "$AGENT_USER"
+info "Added ${AGENT_USER} to docker group."
 
 # ============================================================
-# 3. Change working directory to user openclaw's home
+# 3. Move workdir to agent home
 # ============================================================
-echo "    Changing pwd to user openclaw's home directory"
-WORKDIR=$(pwd)
-OPENCLAW_WORKDIR="/home/openclaw/$(basename $WORKDIR)"
-mv "$WORKDIR" "$OPENCLAW_WORKDIR"
-chown -R openclaw:openclaw "$OPENCLAW_WORKDIR"
-cd "$OPENCLAW_WORKDIR"
-export WORKDIR="$OPENCLAW_WORKDIR"
-
+info "Moving workdir to ${AGENT_WORKDIR}..."
+if [ "$WORKDIR" != "$AGENT_WORKDIR" ]; then
+  mv "$WORKDIR" "$AGENT_WORKDIR"
+  chown -R "${AGENT_USER}:${AGENT_USER}" "$AGENT_WORKDIR"
+fi
+export WORKDIR="$AGENT_WORKDIR"
 
 # ============================================================
-# Rest of the execution will run as user openclaw
+# 4. Write docker-compose.yml for Syncthing
 # ============================================================
+info "Writing docker-compose.yml..."
 
-run_as_openclaw() {
-  set -e
-  cd "$WORKDIR"
-  mkdir -p "$HOME/.docker"
+cat > "${WORKDIR}/docker-compose.yml" <<COMPOSE
+services:
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: agent-syncthing
+    hostname: agent-syncthing
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+    ports:
+      - "8384:8384"     # Web UI (close after setup)
+      - "22000:22000"   # Sync protocol
+    volumes:
+      - ${VAULT_LOCAL}:/data/vault
+      - syncthing-config:/var/syncthing
 
-  # ============================================================
-  # 4. Syncthing Setup（Obsidian Vault）
-  # ============================================================
-  echo "==> Setting Syncthing（Obsidian Vault）"
-  mkdir -p /home/openclaw/openclaw-data/vault
+volumes:
+  syncthing-config:
+COMPOSE
 
-  docker compose up -d obsidian-vault
-  sleep 8
+chown "${AGENT_USER}:${AGENT_USER}" "${WORKDIR}/docker-compose.yml"
 
-  SYNCTHING_CONFIG_FILE="/home/openclaw/openclaw-data/syncthing/config.xml"
-  if [ ! -f "$SYNCTHING_CONFIG_FILE" ]; then
-    echo "Error: Unable to find $SYNCTHING_CONFIG_FILE"
-    exit 1
-  fi
+# ============================================================
+# 5. Syncthing setup & Obsidian Vault sync
+# ============================================================
+info "Starting Syncthing..."
+mkdir -p "$VAULT_LOCAL"
+chown -R "${AGENT_USER}:${AGENT_USER}" "$VAULT_LOCAL"
 
-  cp "$SYNCTHING_CONFIG_FILE" "$SYNCTHING_CONFIG_FILE.bak"
-  sed -i 's|<listenAddress>tcp://default</listenAddress>|<listenAddress>tcp://0.0.0.0</listenAddress>|g' "$SYNCTHING_CONFIG_FILE"
+cd "$WORKDIR"
+sudo -u "$AGENT_USER" docker compose up -d syncthing
+sleep 10
 
-  API_KEY=$(sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' "$SYNCTHING_CONFIG_FILE" | head -1)
+# Extract API key from Syncthing config
+SYNCTHING_CONFIG="/var/lib/docker/volumes/$(basename $WORKDIR)_syncthing-config/_data/config.xml"
+# Wait for config to be generated
+for i in {1..10}; do
+  if [ -f "$SYNCTHING_CONFIG" ]; then break; fi
+  sleep 3
+done
 
-  # Getting DeviceID for latter pairing
-  DEVICE_ID=$(docker exec openclaw-obsidian curl -s \
-    -H "X-Api-Key: $API_KEY" http://127.0.0.1:8384/rest/system/status | jq -r '.myID')
-  echo "    This machine's Syncthing Device ID: $DEVICE_ID"
-
-  # Add remote device
-  echo "    Setting remote device"
-  docker exec openclaw-obsidian curl -s -X POST \
-    -H "X-API-Key: $API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"deviceID\": \"$REMOTE_DEVICE_ID\",
-      \"name\": \"MacBookAir\",
-      \"autoAcceptFolder\": true
-    }" \
-    http://127.0.0.1:8384/rest/config/devices
-
-  # Add Obsidian Vault folder
-  echo "    Setting vault folder"
-  docker exec openclaw-obsidian curl -s -X POST \
-    -H "X-API-Key: $API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"id\": \"$VAULT_ID\",
-      \"label\": \"Obsidian Vault\",
-      \"path\": \"/data/obsidian-data\",
-      \"type\": \"sendreceive\",
-      \"devices\": [
-        {\"deviceID\": \"$REMOTE_DEVICE_ID\"}
-      ]
-    }" \
-    http://127.0.0.1:8384/rest/config/folders
-
-  read -p "Press Enter after vault is synced ..."
-  docker compose down obsidian-vault
-  sleep 8
-
-  # ============================================================
-  # 5. Init OpenClaw
-  # ============================================================
-  echo "==> Init OpenClaw"
-  mkdir -p /home/openclaw/openclaw-data/openclaw
-  mkdir -p openclaw/skills
-  mkdir -p openclaw/hooks
-
-  docker compose build openclaw
-  docker run -it --rm \
-    --env-file "$(pwd)/.env" \
-    -v "/home/openclaw/openclaw-data/openclaw:/home/node/.openclaw" \
-    "openclaw/openclaw:$OPENCLAW_VERSION_TAG-patched" \
-    npx openclaw onboard
-
-  # ============================================================
-  # 6. Caddy Reverse Proxy
-  # ============================================================
-  echo "==> Setup Caddy"
-  sed -i "s|\[domain\]|$REVERSE_PROXY_DOMAIN|g" "./caddy/Caddyfile"
-  sed -i "s|\[ca\]|$CA|g" "./caddy/Caddyfile"
-
-  # ============================================================
-  # 7. Run all services
-  # ============================================================
-  echo "==> Run all services"
-  docker compose up -d
-
-  # ============================================================
-  # 8. Setup OpenClaw
-  # ============================================================
-  echo "==> Setup LAN mode"
-  docker exec -ti openclaw-app openclaw config set gateway.bind lan
-  docker exec -ti openclaw-app openclaw config set agents.defaults.workspace $PERSONA_PATH
-
-  # ============================================================
-  # 8.1 Setup OpenClaw: allowed Origin for WebUI
-  # ============================================================
-  echo "====> Setup allowedOrigins"
-  jq ".gateway.controlUi.allowedOrigins += [\"https://$REVERSE_PROXY_DOMAIN\"]" \
-    /home/openclaw/openclaw-data/openclaw/openclaw.json > temp.json \
-    && mv temp.json /home/openclaw/openclaw-data/openclaw/openclaw.json
-
-  # ============================================================
-  # 8.2 Setup OpenClaw: memorySearch path
-  # ============================================================
-  echo "====> Setup memorySearch"
-  jq ".agents.defaults.memorySearch.extraPaths = [\"/home/node/vault/04-Daily-Notes\"]" \
-    /home/openclaw/openclaw-data/openclaw/openclaw.json > temp.json \
-    && mv temp.json /home/openclaw/openclaw-data/openclaw/openclaw.json
-
-  docker compose down
+if [ ! -f "$SYNCTHING_CONFIG" ]; then
+  # Fallback: get via docker exec
   sleep 5
-  docker compose up -d
+  API_KEY=$(docker exec agent-syncthing cat /var/syncthing/config.xml 2>/dev/null | sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' | head -1)
+else
+  API_KEY=$(sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' "$SYNCTHING_CONFIG" | head -1)
+fi
 
-  echo "==> Deploy completed!"
-}
+if [ -z "$API_KEY" ]; then
+  error "Could not extract Syncthing API key. Check container logs: docker logs agent-syncthing"
+fi
 
-export WORKDIR OPENCLAW_VERSION_TAG REVERSE_PROXY_DOMAIN REMOTE_DEVICE_ID VAULT_ID PERSONA_PATH CA 
-export HOME="/home/openclaw"
-TEMP_SCRIPT=$(mktemp)
-declare -f run_as_openclaw > "$TEMP_SCRIPT"
-echo "run_as_openclaw" >> "$TEMP_SCRIPT"
-chown openclaw:openclaw "$TEMP_SCRIPT"
-sudo -u openclaw -E sg docker -c "bash $TEMP_SCRIPT"
-rm -f "$TEMP_SCRIPT"
+info "Syncthing API key extracted."
+
+# Get this machine's Device ID
+DEVICE_ID=$(docker exec agent-syncthing curl -s \
+  -H "X-Api-Key: $API_KEY" \
+  http://127.0.0.1:8384/rest/system/status | jq -r '.myID')
+
+info "This VPS Syncthing Device ID:"
+echo ""
+echo "  >>>  ${DEVICE_ID}  <<<"
+echo ""
+echo "  Add this device to your local Syncthing (your Mac/PC) before continuing."
+pause "Press Enter after you've added this VPS as a device in your local Syncthing..."
+
+# Add remote device (your Mac/PC)
+info "Adding remote device..."
+docker exec agent-syncthing curl -s -X POST \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"deviceID\": \"${REMOTE_DEVICE_ID}\",
+    \"name\": \"LocalMachine\",
+    \"autoAcceptFolders\": true
+  }" \
+  http://127.0.0.1:8384/rest/config/devices > /dev/null
+
+# Add Obsidian Vault folder
+info "Adding Obsidian Vault folder..."
+docker exec agent-syncthing curl -s -X POST \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"id\": \"${VAULT_ID}\",
+    \"label\": \"Obsidian Vault\",
+    \"path\": \"/data/vault\",
+    \"type\": \"sendreceive\",
+    \"devices\": [
+      {\"deviceID\": \"${REMOTE_DEVICE_ID}\"}
+    ]
+  }" \
+  http://127.0.0.1:8384/rest/config/folders > /dev/null
+
+info "Syncthing configured. Now share the Vault folder to this device from your local Syncthing."
+pause "Press Enter after Vault is fully synced..."
+
+# Verify vault has Agent.md
+if [ ! -f "${VAULT_LOCAL}/Agent.md" ]; then
+  warning "Agent.md not found in vault root (${VAULT_LOCAL}/Agent.md)."
+  warning "Make sure you have Agent.md in your Obsidian Vault root before proceeding."
+  pause "Press Enter to continue anyway..."
+fi
 
 # ============================================================
-# 10. Optional: disable root SSH
+# 6. Install Node.js + Claude Code (native, not Docker)
+# ============================================================
+info "Installing Node.js..."
+sudo -u "$AGENT_USER" bash -c '
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  export NVM_DIR="$HOME/.nvm"
+  source "$NVM_DIR/nvm.sh"
+  nvm install --lts
+  nvm use --lts
+'
+
+info "Installing Claude Code..."
+sudo -u "$AGENT_USER" bash -c '
+  export NVM_DIR="$HOME/.nvm"
+  source "$NVM_DIR/nvm.sh"
+  npm install -g @anthropic-ai/claude-code
+'
+
+# ============================================================
+# 7. Configure Claude Code auth (OAuth Token)
+# ============================================================
+info "Setting up Claude Code authentication..."
+sudo -u "$AGENT_USER" bash -c "
+  mkdir -p \$HOME/.claude
+  echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
+  echo 'export TZ=\"${TIMEZONE}\"' >> \$HOME/.bashrc
+"
+
+# ============================================================
+# 8. Install Discord Channels plugin
+# ============================================================
+info "Installing Discord Channels plugin..."
+
+# Write Discord bot token to Claude channels config
+sudo -u "$AGENT_USER" bash -c "
+  mkdir -p \$HOME/.claude/channels/discord
+  cat > \$HOME/.claude/channels/discord/.env <<EOF
+DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+EOF
+  chmod 600 \$HOME/.claude/channels/discord/.env
+"
+
+# Install plugin via Claude Code
+sudo -u "$AGENT_USER" bash -c '
+  export NVM_DIR="$HOME/.nvm"
+  source "$NVM_DIR/nvm.sh"
+  export CLAUDE_CODE_OAUTH_TOKEN="'"${CLAUDE_OAUTH_TOKEN}"'"
+  claude plugins install @anthropic/discord --yes 2>/dev/null || true
+'
+
+info "Discord plugin installed. You will need to pair your Discord account on first run."
+
+# ============================================================
+# 9. Write CLAUDE.md (repo root, points to vault Agent.md)
+# ============================================================
+info "Writing CLAUDE.md..."
+
+cat > "${AGENT_WORKDIR}/CLAUDE.md" <<'CLAUDEMD'
+# Personal Assistant Configuration
+
+## Persona
+Read and follow all instructions in ~/vault/Agent.md before doing anything else.
+This file contains your persona, rules, and preferences.
+
+## Environment
+- Vault location: ~/vault/
+- Timezone: See TZ environment variable
+- Tasks folder: ~/vault/Tasks/
+- Daily notes: ~/vault/Daily/
+
+## Task file format (YAML frontmatter)
+Every task note should use:
+  status: pending | done | cancelled
+  due: YYYY-MM-DD
+  priority: high | medium | low
+  created: YYYY-MM-DD
+
+## Rules
+- Always reply in Traditional Chinese (繁體中文)
+- Keep Discord messages concise, under 5 lines
+- When adding a task, always fill in the `created` field with today's date
+- When completing a task, update status to `done` and add a `completed` field
+- Never delete vault files without explicit confirmation
+CLAUDEMD
+
+chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
+
+# ============================================================
+# 10. tmux startup script
+# ============================================================
+info "Writing tmux startup script..."
+
+cat > "${AGENT_HOME}/start-agent.sh" <<STARTSCRIPT
+#!/bin/bash
+# Start Claude Code assistant in a persistent tmux session
+# Usage: bash ~/start-agent.sh
+
+export NVM_DIR="\$HOME/.nvm"
+source "\$NVM_DIR/nvm.sh"
+export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_OAUTH_TOKEN}"
+export TZ="${TIMEZONE}"
+
+SESSION="assistant"
+
+if tmux has-session -t "\$SESSION" 2>/dev/null; then
+  echo "Session '\$SESSION' already running. Attaching..."
+  tmux attach -t "\$SESSION"
+else
+  echo "Starting new Claude Code session..."
+  tmux new-session -d -s "\$SESSION" -x 220 -y 50
+  tmux send-keys -t "\$SESSION" "cd ${AGENT_WORKDIR} && claude --channels" Enter
+  echo "Session started. Attaching..."
+  tmux attach -t "\$SESSION"
+fi
+STARTSCRIPT
+
+chmod +x "${AGENT_HOME}/start-agent.sh"
+chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_HOME}/start-agent.sh"
+
+# Install tmux if not present
+if ! command -v tmux &>/dev/null; then
+  info "Installing tmux..."
+  apt-get install -y tmux -qq
+fi
+
+# ============================================================
+# 11. Firewall
+# ============================================================
+info "Configuring firewall..."
+if command -v ufw &>/dev/null; then
+  ufw allow OpenSSH
+  ufw --force enable
+  # Close Syncthing Web UI from outside (only allow sync protocol)
+  ufw deny 8384
+  ufw allow 22000
+  info "UFW configured. Port 8384 (Syncthing UI) is blocked externally."
+else
+  warning "ufw not found, skipping firewall setup."
+fi
+
+# ============================================================
+# Done!
 # ============================================================
 echo ""
 echo "========================================================"
-echo "Optional:"
-echo "  After user openclaw can login via SSH,"
-echo "  You can run following command to disable root SSH login:"
+echo -e "${GREEN}✅ Setup complete!${NC}"
 echo ""
-echo "    sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config"
-echo "    systemctl restart sshd"
+echo "Next steps:"
+echo ""
+echo "  1. SSH into the VPS as ${AGENT_USER}:"
+echo "     ssh ${AGENT_USER}@<your-vps-ip>"
+echo ""
+echo "  2. Start the assistant:"
+echo "     bash ~/start-agent.sh"
+echo ""
+echo "  3. Pair your Discord account:"
+echo "     DM your bot → get a pairing code → type it in Claude Code"
+echo "     Then run: /discord:access policy allowlist"
+echo ""
+echo "  4. Verify vault is synced:"
+echo "     ls ~/vault/"
+echo ""
+echo "  5. (Optional) Disable root SSH after confirming ${AGENT_USER} can login:"
+echo "     sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config"
+echo "     systemctl restart sshd"
+echo ""
 echo "========================================================"
