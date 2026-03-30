@@ -83,6 +83,7 @@ TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
 # Derived paths
 AGENT_HOME="/home/${AGENT_USER}"
 VAULT_LOCAL="${AGENT_HOME}/vault"
+PERSONA_LOCAL="${AGENT_HOME}/vault/00-Laura-Persona"
 WORKDIR=$(pwd)
 AGENT_WORKDIR="${AGENT_HOME}/$(basename $WORKDIR)"
 
@@ -165,30 +166,19 @@ cd "$WORKDIR"
 sudo -u "$AGENT_USER" docker compose up -d syncthing
 sleep 10
 
-# Extract API key from Syncthing config
-SYNCTHING_CONFIG="/var/lib/docker/volumes/$(basename $WORKDIR)_syncthing-config/_data/config.xml"
-# Wait for config to be generated
-for i in {1..10}; do
-  if [ -f "$SYNCTHING_CONFIG" ]; then break; fi
-  sleep 3
-done
+# Extract API key — call from host (Syncthing v2.0 image has no curl)
+info "Waiting for Syncthing API to be ready..."
+SYNCTHING_CONFIG_DIR=$(docker volume inspect \
+  "$(basename $WORKDIR)_syncthing-config" \
+  --format '{{.Mountpoint}}')
+SYNCTHING_CONFIG_FILE="${SYNCTHING_CONFIG_DIR}/config/config.xml"
+API_KEY=$(sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' "$SYNCTHING_CONFIG_FILE" | head -1)
 
-if [ ! -f "$SYNCTHING_CONFIG" ]; then
-  # Fallback: get via docker exec
-  sleep 5
-  API_KEY=$(docker exec agent-syncthing cat /var/syncthing/config.xml 2>/dev/null | sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' | head -1)
-else
-  API_KEY=$(sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' "$SYNCTHING_CONFIG" | head -1)
-fi
-
-if [ -z "$API_KEY" ]; then
-  error "Could not extract Syncthing API key. Check container logs: docker logs agent-syncthing"
-fi
-
-info "Syncthing API key extracted."
+# Setup listen address
+sed -i 's|<listenAddress>tcp://default</listenAddress>|<listenAddress>tcp://0.0.0.0</listenAddress>|g' "$SYNCTHING_CONFIG_FILE"
 
 # Get this machine's Device ID
-DEVICE_ID=$(docker exec agent-syncthing curl -s \
+DEVICE_ID=$(curl -sf \
   -H "X-Api-Key: $API_KEY" \
   http://127.0.0.1:8384/rest/system/status | jq -r '.myID')
 
@@ -196,12 +186,10 @@ info "This VPS Syncthing Device ID:"
 echo ""
 echo "  >>>  ${DEVICE_ID}  <<<"
 echo ""
-echo "  Add this device to your local Syncthing (your Mac/PC) before continuing."
-pause "Press Enter after you've added this VPS as a device in your local Syncthing..."
 
 # Add remote device (your Mac/PC) — PUT is idempotent (create or update)
 info "Adding remote device..."
-docker exec agent-syncthing curl -s -X PUT \
+curl -s -X PUT \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
@@ -209,11 +197,11 @@ docker exec agent-syncthing curl -s -X PUT \
     \"name\": \"LocalMachine\",
     \"autoAcceptFolders\": true
   }" \
-  "http://127.0.0.1:8384/rest/config/devices/${REMOTE_DEVICE_ID}" > /dev/null
+  http://127.0.0.1:8384/rest/config/devices > /dev/null
 
 # Add Obsidian Vault folder — PUT is idempotent (create or update)
 info "Adding Obsidian Vault folder..."
-docker exec agent-syncthing curl -s -X PUT \
+curl -s -X PUT \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
@@ -225,15 +213,15 @@ docker exec agent-syncthing curl -s -X PUT \
       {\"deviceID\": \"${REMOTE_DEVICE_ID}\"}
     ]
   }" \
-  "http://127.0.0.1:8384/rest/config/folders/${VAULT_ID}" > /dev/null
+  http://127.0.0.1:8384/rest/config/folders > /dev/null
 
 info "Syncthing configured. Now share the Vault folder to this device from your local Syncthing."
 pause "Press Enter after Vault is fully synced..."
 
-# Verify vault has Agent.md
-if [ ! -f "${VAULT_LOCAL}/Agent.md" ]; then
-  warning "Agent.md not found in vault root (${VAULT_LOCAL}/Agent.md)."
-  warning "Make sure you have Agent.md in your Obsidian Vault root before proceeding."
+# Verify vault has AGENTS.md
+if [ ! -f "${PERSONA_LOCAL}/AGENTS.md" ]; then
+  warning "AGENTS.md not found in vault root (${PERSONA_LOCAL}/AGENTS.md)."
+  warning "Make sure you have AGENTS.md in your Obsidian Vault root before proceeding."
   pause "Press Enter to continue anyway..."
 fi
 
@@ -318,7 +306,7 @@ sudo -u "$AGENT_USER" bash -c '
 info "Discord plugin installed. You will need to pair your Discord account on first run."
 
 # ============================================================
-# 9. Write CLAUDE.md (repo root, points to vault Agent.md)
+# 9. Write CLAUDE.md (repo root, points to vault AGENTS.md)
 # ============================================================
 info "Writing CLAUDE.md..."
 
@@ -326,7 +314,7 @@ cat > "${AGENT_WORKDIR}/CLAUDE.md" <<'CLAUDEMD'
 # Personal Assistant Configuration
 
 ## Persona
-Read and follow all instructions in ~/vault/Agent.md before doing anything else.
+Read and follow all instructions in ${PERSONA_LOCAL}/AGENTS.md before doing anything else.
 This file contains your persona, rules, and preferences.
 
 ## Environment
@@ -349,6 +337,8 @@ Every task note should use:
 - When completing a task, update status to `done` and add a `completed` field
 - Never delete vault files without explicit confirmation
 CLAUDEMD
+sed -i "s|\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/CLAUDE.md"
+
 
 chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
 
