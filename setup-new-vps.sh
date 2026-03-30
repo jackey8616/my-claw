@@ -15,9 +15,10 @@ set -e
 #   2. Install Docker
 #   3. Start Syncthing (Docker) and sync Obsidian Vault
 #   4. Install Claude Code (native)
-#   5. Install Discord Channels plugin
-#   6. Create CLAUDE.md pointing to Persona in vault
-#   7. Create tmux startup script
+#   5. Install Bun (required for Channels plugins)
+#   6. Install Discord Channels plugin
+#   7. Create CLAUDE.md pointing to Persona in vault
+#   8. Create tmux startup script
 # ============================================================
 
 # ============================================================
@@ -75,7 +76,6 @@ info "Loading configuration..."
 AGENT_USER=$(load_env "AGENT_USER" "dedicated user name (e.g. myagent)")
 REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID" "Syncthing Device ID of your Mac/PC")
 VAULT_ID=$(load_env "VAULT_ID" "Syncthing Folder ID of your Obsidian Vault")
-VAULT_PATH=$(load_env "VAULT_PATH" "Vault path inside Syncthing container (e.g. /data/vault)")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 CLAUDE_OAUTH_TOKEN=$(load_env "CLAUDE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
@@ -261,7 +261,25 @@ sudo -u "$AGENT_USER" bash -c "
 "
 
 # ============================================================
-# 7. Configure Claude Code auth (OAuth Token)
+# 7. Install Bun (required for Claude Code Channels plugins)
+# ============================================================
+info "Installing Bun..."
+sudo -u "$AGENT_USER" bash -c '
+  if command -v bun &>/dev/null; then
+    echo "    Bun already installed ($(bun --version)), skipping."
+  else
+    curl -fsSL https://bun.sh/install | bash
+    echo "    Bun installed."
+  fi
+
+  # Ensure bun is in PATH for future sessions
+  if ! grep -q "\.bun/bin" $HOME/.bashrc 2>/dev/null; then
+    echo "export PATH=\"\$HOME/.bun/bin:\$PATH\"" >> $HOME/.bashrc
+  fi
+'
+
+# ============================================================
+# 8. Configure Claude Code auth (OAuth Token)
 # ============================================================
 info "Setting up Claude Code authentication..."
 sudo -u "$AGENT_USER" bash -c "
@@ -282,7 +300,7 @@ sudo -u "$AGENT_USER" bash -c "
 "
 
 # ============================================================
-# 8. Install Discord Channels plugin
+# 9. Install Discord Channels plugin
 # ============================================================
 info "Installing Discord Channels plugin..."
 
@@ -306,7 +324,7 @@ sudo -u "$AGENT_USER" bash -c '
 info "Discord plugin installed. You will need to pair your Discord account on first run."
 
 # ============================================================
-# 9. Write CLAUDE.md (repo root, points to vault AGENTS.md)
+# 10. Write CLAUDE.md (repo root, points to vault AGENTS.md)
 # ============================================================
 info "Writing CLAUDE.md..."
 
@@ -343,7 +361,7 @@ sed -i "s|\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/CLAUDE.md"
 chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
 
 # ============================================================
-# 10. tmux startup script
+# 11. tmux startup script
 # ============================================================
 info "Writing tmux startup script..."
 
@@ -365,7 +383,7 @@ if tmux has-session -t "\$SESSION" 2>/dev/null; then
 else
   echo "Starting new Claude Code session..."
   tmux new-session -d -s "\$SESSION" -x 220 -y 50
-  tmux send-keys -t "\$SESSION" "cd ${AGENT_WORKDIR} && claude --channels" Enter
+  tmux send-keys -t "\$SESSION" "cd ${AGENT_WORKDIR} && claude --channels plugin:discord@claude-plugins-official" Enter
   echo "Session started. Attaching..."
   tmux attach -t "\$SESSION"
 fi
@@ -381,7 +399,7 @@ if ! command -v tmux &>/dev/null; then
 fi
 
 # ============================================================
-# 11. Firewall
+# 12. Firewall
 # ============================================================
 info "Configuring firewall..."
 if command -v ufw &>/dev/null; then
