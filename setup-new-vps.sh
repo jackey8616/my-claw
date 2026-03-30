@@ -199,9 +199,9 @@ echo ""
 echo "  Add this device to your local Syncthing (your Mac/PC) before continuing."
 pause "Press Enter after you've added this VPS as a device in your local Syncthing..."
 
-# Add remote device (your Mac/PC)
+# Add remote device (your Mac/PC) — PUT is idempotent (create or update)
 info "Adding remote device..."
-docker exec agent-syncthing curl -s -X POST \
+docker exec agent-syncthing curl -s -X PUT \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
@@ -209,11 +209,11 @@ docker exec agent-syncthing curl -s -X POST \
     \"name\": \"LocalMachine\",
     \"autoAcceptFolders\": true
   }" \
-  http://127.0.0.1:8384/rest/config/devices > /dev/null
+  "http://127.0.0.1:8384/rest/config/devices/${REMOTE_DEVICE_ID}" > /dev/null
 
-# Add Obsidian Vault folder
+# Add Obsidian Vault folder — PUT is idempotent (create or update)
 info "Adding Obsidian Vault folder..."
-docker exec agent-syncthing curl -s -X POST \
+docker exec agent-syncthing curl -s -X PUT \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
@@ -225,7 +225,7 @@ docker exec agent-syncthing curl -s -X POST \
       {\"deviceID\": \"${REMOTE_DEVICE_ID}\"}
     ]
   }" \
-  http://127.0.0.1:8384/rest/config/folders > /dev/null
+  "http://127.0.0.1:8384/rest/config/folders/${VAULT_ID}" > /dev/null
 
 info "Syncthing configured. Now share the Vault folder to this device from your local Syncthing."
 pause "Press Enter after Vault is fully synced..."
@@ -240,21 +240,37 @@ fi
 # ============================================================
 # 6. Install Node.js + Claude Code (native, not Docker)
 # ============================================================
-info "Installing Node.js..."
+CLAUDE_CODE_VERSION="2.1.86"
+
+info "Installing Node.js (via nvm)..."
 sudo -u "$AGENT_USER" bash -c '
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
   export NVM_DIR="$HOME/.nvm"
+  if [ -s "$NVM_DIR/nvm.sh" ]; then
+    echo "    nvm already installed, skipping."
+  else
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  fi
   source "$NVM_DIR/nvm.sh"
-  nvm install --lts
+  if nvm ls --no-colors 2>/dev/null | grep -q "lts/"; then
+    echo "    Node.js LTS already installed, skipping."
+  else
+    nvm install --lts
+  fi
   nvm use --lts
 '
 
-info "Installing Claude Code..."
-sudo -u "$AGENT_USER" bash -c '
-  export NVM_DIR="$HOME/.nvm"
-  source "$NVM_DIR/nvm.sh"
-  npm install -g @anthropic-ai/claude-code
-'
+info "Installing Claude Code@${CLAUDE_CODE_VERSION}..."
+sudo -u "$AGENT_USER" bash -c "
+  export NVM_DIR=\"\$HOME/.nvm\"
+  source \"\$NVM_DIR/nvm.sh\"
+  INSTALLED=\$(npm list -g --depth=0 2>/dev/null | grep '@anthropic-ai/claude-code' | grep -o '[0-9]*\.[0-9]*\.[0-9]*' || true)
+  if [ \"\$INSTALLED\" = \"${CLAUDE_CODE_VERSION}\" ]; then
+    echo '    Claude Code ${CLAUDE_CODE_VERSION} already installed, skipping.'
+  else
+    echo \"    Installing Claude Code ${CLAUDE_CODE_VERSION} (was: \${INSTALLED:-none})...\"
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+  fi
+"
 
 # ============================================================
 # 7. Configure Claude Code auth (OAuth Token)
@@ -262,8 +278,19 @@ sudo -u "$AGENT_USER" bash -c '
 info "Setting up Claude Code authentication..."
 sudo -u "$AGENT_USER" bash -c "
   mkdir -p \$HOME/.claude
-  echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
-  echo 'export TZ=\"${TIMEZONE}\"' >> \$HOME/.bashrc
+
+  # Write each env var only if not already present (idempotent)
+  if ! grep -q 'CLAUDE_CODE_OAUTH_TOKEN' \$HOME/.bashrc 2>/dev/null; then
+    echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
+  else
+    sed -i 's|^export CLAUDE_CODE_OAUTH_TOKEN=.*|export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"|' \$HOME/.bashrc
+  fi
+
+  if ! grep -q '^export TZ=' \$HOME/.bashrc 2>/dev/null; then
+    echo 'export TZ=\"${TIMEZONE}\"' >> \$HOME/.bashrc
+  else
+    sed -i 's|^export TZ=.*|export TZ=\"${TIMEZONE}\"|' \$HOME/.bashrc
+  fi
 "
 
 # ============================================================
