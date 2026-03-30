@@ -417,34 +417,47 @@ chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
 # ============================================================
 info "Writing tmux startup script..."
 
-cat > "${AGENT_HOME}/start-agent.sh" <<STARTSCRIPT
+cat > "${AGENT_WORKDIR}/start-agent.sh" <<'STARTSCRIPT'
 #!/bin/bash
 # Start Claude Code assistant in a persistent tmux session
-# Usage: bash ~/start-agent.sh
+# Usage: bash start-agent.sh
 
-export NVM_DIR="\$HOME/.nvm"
-source "\$NVM_DIR/nvm.sh"
-export BUN_INSTALL="\$HOME/.bun"
-export PATH="\$BUN_INSTALL/bin:\$PATH"
-export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_OAUTH_TOKEN}"
-export TZ="${TIMEZONE}"
+# Resolve script's own directory so it works regardless of cwd
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load config from .env in the same directory
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+  set -a
+  source "${SCRIPT_DIR}/.env"
+  set +a
+else
+  echo "Error: .env not found at ${SCRIPT_DIR}/.env"
+  exit 1
+fi
+
+export NVM_DIR="$HOME/.nvm"
+source "$NVM_DIR/nvm.sh"
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+export CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN"
+export TZ="$TIMEZONE"
 
 SESSION="assistant"
 
-if tmux has-session -t "\$SESSION" 2>/dev/null; then
-  echo "Session '\$SESSION' already running. Attaching..."
-  tmux attach -t "\$SESSION"
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  echo "Session '$SESSION' already running. Attaching..."
+  tmux attach -t "$SESSION"
 else
   echo "Starting new Claude Code session..."
-  tmux new-session -d -s "\$SESSION" -x 220 -y 50
-  tmux send-keys -t "\$SESSION" "cd ${AGENT_WORKDIR} && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
+  tmux new-session -d -s "$SESSION" -x 220 -y 50
+  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
   echo "Session started. Attaching..."
-  tmux attach -t "\$SESSION"
+  tmux attach -t "$SESSION"
 fi
 STARTSCRIPT
 
-chmod +x "${AGENT_HOME}/start-agent.sh"
-chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_HOME}/start-agent.sh"
+chmod +x "${AGENT_WORKDIR}/start-agent.sh"
+chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/start-agent.sh"
 
 # Install tmux if not present
 if ! command -v tmux &>/dev/null; then
@@ -479,7 +492,7 @@ echo "  1. SSH into the VPS as ${AGENT_USER}:"
 echo "     ssh ${AGENT_USER}@<your-vps-ip>"
 echo ""
 echo "  2. Start the assistant:"
-echo "     bash ~/start-agent.sh"
+echo "     bash ~/${AGENT_WORKDIR##*/}/start-agent.sh"
 echo ""
 echo "  3. Pair your Discord account:"
 echo "     DM your bot → get a pairing code → type it in Claude Code"
