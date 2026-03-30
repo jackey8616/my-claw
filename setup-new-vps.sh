@@ -347,6 +347,7 @@ else
     https://github.com/anthropics/claude-plugins-official.git "$CLONE_TMP"
   git -C "$CLONE_TMP" sparse-checkout set external_plugins/discord
 
+  mkdir -p "$(dirname "$PLUGIN_DIR")"
   cp -r "${CLONE_TMP}/external_plugins/discord" "$PLUGIN_DIR"
   chown -R "${AGENT_USER}:${AGENT_USER}" "$PLUGIN_DIR"
   rm -rf "$CLONE_TMP"
