@@ -303,7 +303,6 @@ info "Setting up Claude Code authentication..."
 sudo -u "$AGENT_USER" bash -c "
   mkdir -p \$HOME/.claude
 
-  # Write each env var only if not already present (idempotent)
   if ! grep -q 'CLAUDE_CODE_OAUTH_TOKEN' \$HOME/.bashrc 2>/dev/null; then
     echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
   else
@@ -331,7 +330,37 @@ EOF
   chmod 600 \$HOME/.claude/channels/discord/.env
 "
 
-# Install plugin and configure bot token via claude -p
+# Pre-register the official marketplace in settings.json so Claude
+# can find the plugin without any interactive setup step.
+sudo -u "$AGENT_USER" bash -c "
+  mkdir -p \$HOME/.claude
+
+  # Write settings.json only if it doesn't already contain the marketplace entry
+  SETTINGS=\"\$HOME/.claude/settings.json\"
+  if [ ! -f \"\$SETTINGS\" ]; then
+    echo '{\"pluginMarketplaces\":[{\"owner\":\"anthropics\",\"repo\":\"claude-plugins-official\",\"name\":\"claude-plugins-official\"}]}' \
+      | python3 -m json.tool > \"\$SETTINGS\"
+  elif ! grep -q 'claude-plugins-official' \"\$SETTINGS\" 2>/dev/null; then
+    # Merge marketplace entry into existing settings using python3
+    python3 - <<'PYEOF'
+import json, sys
+path = '$HOME/.claude/settings.json'
+with open(path) as f:
+    cfg = json.load(f)
+mp = cfg.setdefault('pluginMarketplaces', [])
+entry = {'owner': 'anthropics', 'repo': 'claude-plugins-official', 'name': 'claude-plugins-official'}
+if not any(m.get('name') == 'claude-plugins-official' for m in mp):
+    mp.append(entry)
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+print('    Marketplace entry added to settings.json')
+PYEOF
+  else
+    echo '    Marketplace already in settings.json, skipping.'
+  fi
+"
+
+# Install plugin via the proper non-interactive CLI command
 sudo -u "$AGENT_USER" bash -c "
   export NVM_DIR=\"\$HOME/.nvm\"
   source \"\$NVM_DIR/nvm.sh\"
@@ -339,14 +368,10 @@ sudo -u "$AGENT_USER" bash -c "
   export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
   export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"
 
-  echo '    Installing Discord plugin...'
-  claude -p '/plugin install discord@claude-plugins-official' --allowedTools '' 2>/dev/null || \
-    claude plugins install @anthropic/discord --yes 2>/dev/null || \
-    echo '    Note: Plugin install via CLI may require manual confirmation on first run.'
-
-  echo '    Configuring bot token...'
-  claude -p '/discord:configure ${DISCORD_BOT_TOKEN}' --allowedTools '' 2>/dev/null || \
-    echo '    Note: Bot token written to ~/.claude/channels/discord/.env as fallback.'
+  echo '    Installing Discord plugin (non-interactive)...'
+  claude plugin install discord@claude-plugins-official 2>&1 && \
+    echo '    Discord plugin installed successfully.' || \
+    echo '    Warning: plugin install returned non-zero. Check manually on first run.'
 "
 
 info "Discord plugin configured."
