@@ -261,13 +261,29 @@ sudo -u "$AGENT_USER" bash -c "
   fi
 "
 
+# Verify Claude Code version meets minimum requirement
+info "Verifying Claude Code version..."
+sudo -u "$AGENT_USER" bash -c '
+  export NVM_DIR="$HOME/.nvm"
+  source "$NVM_DIR/nvm.sh"
+  CLAUDE_VER=$(claude --version 2>/dev/null | grep -oP "\d+\.\d+\.\d+" | head -1)
+  echo "    Claude Code version: ${CLAUDE_VER}"
+  IFS="." read -r major minor patch <<< "$CLAUDE_VER"
+  if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 1 ]; } || \
+     { [ "$major" -eq 2 ] && [ "$minor" -eq 1 ] && [ "$patch" -lt 80 ]; }; then
+    echo "    Warning: Claude Code >= 2.1.80 is required for Discord plugin support."
+  else
+    echo "    Version OK (>= 2.1.80)."
+  fi
+'
+
 # ============================================================
 # 7. Install Bun (required for Claude Code Channels plugins)
 # ============================================================
 info "Installing Bun..."
 sudo -u "$AGENT_USER" bash -c '
-  if command -v bun &>/dev/null; then
-    echo "    Bun already installed ($(bun --version)), skipping."
+  if command -v bun &>/dev/null || [ -f "$HOME/.bun/bin/bun" ]; then
+    echo "    Bun already installed ($(~/.bun/bin/bun --version 2>/dev/null || bun --version)), skipping."
   else
     curl -fsSL https://bun.sh/install | bash
     echo "    Bun installed."
@@ -275,7 +291,8 @@ sudo -u "$AGENT_USER" bash -c '
 
   # Ensure bun is in PATH for future sessions
   if ! grep -q "\.bun/bin" $HOME/.bashrc 2>/dev/null; then
-    echo "export PATH=\"\$HOME/.bun/bin:\$PATH\"" >> $HOME/.bashrc
+    echo "export BUN_INSTALL=\"\$HOME/.bun\"" >> $HOME/.bashrc
+    echo "export PATH=\"\$BUN_INSTALL/bin:\$PATH\"" >> $HOME/.bashrc
   fi
 '
 
@@ -314,15 +331,25 @@ EOF
   chmod 600 \$HOME/.claude/channels/discord/.env
 "
 
-# Install plugin via Claude Code
-sudo -u "$AGENT_USER" bash -c '
-  export NVM_DIR="$HOME/.nvm"
-  source "$NVM_DIR/nvm.sh"
-  export CLAUDE_CODE_OAUTH_TOKEN="'"${CLAUDE_OAUTH_TOKEN}"'"
-  claude plugins install @anthropic/discord --yes 2>/dev/null || true
-'
+# Install plugin and configure bot token via claude -p
+sudo -u "$AGENT_USER" bash -c "
+  export NVM_DIR=\"\$HOME/.nvm\"
+  source \"\$NVM_DIR/nvm.sh\"
+  export BUN_INSTALL=\"\$HOME/.bun\"
+  export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
+  export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"
 
-info "Discord plugin installed. You will need to pair your Discord account on first run."
+  echo '    Installing Discord plugin...'
+  claude -p '/plugin install discord@claude-plugins-official' --allowedTools '' 2>/dev/null || \
+    claude plugins install @anthropic/discord --yes 2>/dev/null || \
+    echo '    Note: Plugin install via CLI may require manual confirmation on first run.'
+
+  echo '    Configuring bot token...'
+  claude -p '/discord:configure ${DISCORD_BOT_TOKEN}' --allowedTools '' 2>/dev/null || \
+    echo '    Note: Bot token written to ~/.claude/channels/discord/.env as fallback.'
+"
+
+info "Discord plugin configured."
 
 # ============================================================
 # 10. Write CLAUDE.md (repo root, points to vault AGENTS.md)
@@ -358,7 +385,6 @@ Every task note should use:
 CLAUDEMD
 sed -i "s|\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/CLAUDE.md"
 
-
 chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
 
 # ============================================================
@@ -373,6 +399,8 @@ cat > "${AGENT_HOME}/start-agent.sh" <<STARTSCRIPT
 
 export NVM_DIR="\$HOME/.nvm"
 source "\$NVM_DIR/nvm.sh"
+export BUN_INSTALL="\$HOME/.bun"
+export PATH="\$BUN_INSTALL/bin:\$PATH"
 export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_OAUTH_TOKEN}"
 export TZ="${TIMEZONE}"
 
@@ -384,7 +412,7 @@ if tmux has-session -t "\$SESSION" 2>/dev/null; then
 else
   echo "Starting new Claude Code session..."
   tmux new-session -d -s "\$SESSION" -x 220 -y 50
-  tmux send-keys -t "\$SESSION" "cd ${AGENT_WORKDIR} && claude --channels plugin:discord@claude-plugins-official" Enter
+  tmux send-keys -t "\$SESSION" "cd ${AGENT_WORKDIR} && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
   echo "Session started. Attaching..."
   tmux attach -t "\$SESSION"
 fi
@@ -406,7 +434,6 @@ info "Configuring firewall..."
 if command -v ufw &>/dev/null; then
   ufw allow OpenSSH
   ufw --force enable
-  # Close Syncthing Web UI from outside (only allow sync protocol)
   ufw deny 8384
   ufw allow 22000
   info "UFW configured. Port 8384 (Syncthing UI) is blocked externally."
@@ -431,7 +458,9 @@ echo "     bash ~/start-agent.sh"
 echo ""
 echo "  3. Pair your Discord account:"
 echo "     DM your bot → get a pairing code → type it in Claude Code"
-echo "     Then run: /discord:access policy allowlist"
+echo "     tmux attach -t assistant"
+echo "     /discord:access pair <code>"
+echo "     /discord:access policy allowlist"
 echo ""
 echo "  4. Verify vault is synced:"
 echo "     ls ~/vault/"
