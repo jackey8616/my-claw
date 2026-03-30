@@ -321,6 +321,8 @@ sudo -u "$AGENT_USER" bash -c "
 # ============================================================
 info "Installing Discord Channels plugin..."
 
+apt-get install -y -qq git
+
 # Write Discord bot token to Claude channels config
 sudo -u "$AGENT_USER" bash -c "
   mkdir -p \$HOME/.claude/channels/discord
@@ -330,48 +332,35 @@ EOF
   chmod 600 \$HOME/.claude/channels/discord/.env
 "
 
-# Pre-register the official marketplace in settings.json so Claude
-# can find the plugin without any interactive setup step.
-sudo -u "$AGENT_USER" bash -c "
-  mkdir -p \$HOME/.claude
+# Clone the official plugin repo and copy the discord plugin directly into
+# ~/.claude/plugins/discord — same layout that `claude plugin install` produces,
+# no marketplace fetch required.
+PLUGIN_DIR="${AGENT_HOME}/.claude/plugins/discord"
+CLONE_TMP="/tmp/claude-plugins-official"
 
-  # Write settings.json only if it doesn't already contain the marketplace entry
-  SETTINGS=\"\$HOME/.claude/settings.json\"
-  if [ ! -f \"\$SETTINGS\" ]; then
-    echo '{\"pluginMarketplaces\":[{\"owner\":\"anthropics\",\"repo\":\"claude-plugins-official\",\"name\":\"claude-plugins-official\"}]}' \
-      | python3 -m json.tool > \"\$SETTINGS\"
-  elif ! grep -q 'claude-plugins-official' \"\$SETTINGS\" 2>/dev/null; then
-    # Merge marketplace entry into existing settings using python3
-    python3 - <<'PYEOF'
-import json, sys
-path = '$HOME/.claude/settings.json'
-with open(path) as f:
-    cfg = json.load(f)
-mp = cfg.setdefault('pluginMarketplaces', [])
-entry = {'owner': 'anthropics', 'repo': 'claude-plugins-official', 'name': 'claude-plugins-official'}
-if not any(m.get('name') == 'claude-plugins-official' for m in mp):
-    mp.append(entry)
-with open(path, 'w') as f:
-    json.dump(cfg, f, indent=2)
-print('    Marketplace entry added to settings.json')
-PYEOF
-  else
-    echo '    Marketplace already in settings.json, skipping.'
-  fi
-"
+if [ -d "$PLUGIN_DIR" ]; then
+  warning "Discord plugin already present at ${PLUGIN_DIR}, skipping clone."
+else
+  info "Cloning claude-plugins-official (sparse)..."
+  rm -rf "$CLONE_TMP"
+  git clone --depth 1 --filter=blob:none --sparse \
+    https://github.com/anthropics/claude-plugins-official.git "$CLONE_TMP"
+  git -C "$CLONE_TMP" sparse-checkout set external_plugins/discord
 
-# Install plugin via the proper non-interactive CLI command
+  cp -r "${CLONE_TMP}/external_plugins/discord" "$PLUGIN_DIR"
+  chown -R "${AGENT_USER}:${AGENT_USER}" "$PLUGIN_DIR"
+  rm -rf "$CLONE_TMP"
+  info "Discord plugin installed to ${PLUGIN_DIR}"
+fi
+
+# Pre-install bun dependencies so the MCP server starts without delay
 sudo -u "$AGENT_USER" bash -c "
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
   export BUN_INSTALL=\"\$HOME/.bun\"
   export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
-  export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"
-
-  echo '    Installing Discord plugin (non-interactive)...'
-  claude plugin install discord@claude-plugins-official 2>&1 && \
-    echo '    Discord plugin installed successfully.' || \
-    echo '    Warning: plugin install returned non-zero. Check manually on first run.'
+  if [ -f \"${PLUGIN_DIR}/package.json\" ]; then
+    echo '    Running bun install for discord plugin...'
+    cd '${PLUGIN_DIR}' && bun install --frozen-lockfile 2>&1 | tail -3
+  fi
 "
 
 info "Discord plugin configured."
