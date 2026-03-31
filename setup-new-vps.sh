@@ -11,14 +11,19 @@ set -e
 # Run as root on a fresh Ubuntu 22.04/24.04
 #
 # What this script does:
-#   1. Create a dedicated user
-#   2. Install Docker
-#   3. Start Syncthing (Docker) and sync Obsidian Vault
-#   4. Install Claude Code (native)
-#   5. Install Bun (required for Channels plugins)
-#   6. Install Discord Channels plugin
-#   7. Create CLAUDE.md pointing to Persona in vault
-#   8. Create tmux startup script
+#   1.  Create a dedicated user
+#   2.  Install Docker
+#   3.  Move workdir to agent home
+#   4.  Write docker-compose.yml for Syncthing
+#   5.  Syncthing setup & Obsidian Vault sync
+#   6.  Install Node.js + Claude Code (native)
+#   7.  Install Bun (required for Channels plugins)
+#   8.  Configure Claude Code auth (OAuth Token)
+#   8.5 Configure Claude Code Hooks
+#   9.  Install Discord Channels plugin
+#   10. Write CLAUDE.md pointing to Persona in vault
+#   11. Write tmux startup script
+#   12. Firewall
 # ============================================================
 
 # ============================================================
@@ -322,6 +327,50 @@ CLAUDEJSON
   else
     sed -i 's|^export TZ=.*|export TZ=\"${TIMEZONE}\"|' \$HOME/.bashrc
   fi
+"
+
+# ============================================================
+# 8.5 Configure Claude Code Hooks
+# ============================================================
+info "Configuring Claude Code hooks..."
+
+HOOKS_DIR="${AGENT_WORKDIR}/hooks"
+
+find "$HOOKS_DIR" -name "*.sh" -exec chmod +x {} \;
+chown -R "${AGENT_USER}:${AGENT_USER}" "$HOOKS_DIR"
+
+sudo -u "$AGENT_USER" bash -c "
+  GLOBAL_SETTINGS=\"\$HOME/.claude/settings.json\"
+  mkdir -p \$HOME/.claude
+
+  if [ ! -f \"\$GLOBAL_SETTINGS\" ]; then
+    echo '{}' > \"\$GLOBAL_SETTINGS\"
+  fi
+
+  # 清除舊的 hooks 區塊，避免重複執行時重複註冊
+  jq 'del(.hooks)' \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
+  mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
+
+  # 依資料夾名稱排序，逐一讀取 claude_event_name 並註冊所有 .sh
+  find '${HOOKS_DIR}' -mindepth 1 -maxdepth 1 -type d | sort | while read -r hook_dir; do
+    EVENT_FILE=\"\${hook_dir}/claude_event_name\"
+
+    if [ ! -f \"\$EVENT_FILE\" ]; then
+      echo \"    Skipping \$(basename \$hook_dir): no claude_event_name found\"
+      continue
+    fi
+
+    EVENT=\$(cat \"\$EVENT_FILE\" | tr -d '[:space:]')
+
+    find \"\$hook_dir\" -name '*.sh' | sort | while read -r script; do
+      jq \".hooks.\${EVENT} += [{\\\"hooks\\\": [{\\\"type\\\": \\\"command\\\", \\\"command\\\": \\\"\$script\\\"}]}]\" \
+        \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
+      mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
+      echo \"    Registered [\${EVENT}]: \$script\"
+    done
+  done
+
+  chmod 600 \"\$GLOBAL_SETTINGS\"
 "
 
 # ============================================================
