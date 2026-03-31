@@ -77,7 +77,7 @@ AGENT_USER=$(load_env "AGENT_USER" "dedicated user name (e.g. myagent)")
 REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID" "Syncthing Device ID of your Mac/PC")
 VAULT_ID=$(load_env "VAULT_ID" "Syncthing Folder ID of your Obsidian Vault")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
-CLAUDE_OAUTH_TOKEN=$(load_env "CLAUDE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
+CLAUDE_CODE_OAUTH_TOKEN=$(load_env "CLAUDE_CODE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
 
 # Derived paths
@@ -303,10 +303,18 @@ info "Setting up Claude Code authentication..."
 sudo -u "$AGENT_USER" bash -c "
   mkdir -p \$HOME/.claude
 
+  # Skip onboarding prompt
+  cat > \$HOME/.claude.json <<'CLAUDEJSON'
+{
+  \"hasCompletedOnboarding\": true
+}
+CLAUDEJSON
+  chmod 600 \$HOME/.claude.json
+
   if ! grep -q 'CLAUDE_CODE_OAUTH_TOKEN' \$HOME/.bashrc 2>/dev/null; then
-    echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
+    echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
   else
-    sed -i 's|^export CLAUDE_CODE_OAUTH_TOKEN=.*|export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_OAUTH_TOKEN}\"|' \$HOME/.bashrc
+    sed -i 's|^export CLAUDE_CODE_OAUTH_TOKEN=.*|export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"|' \$HOME/.bashrc
   fi
 
   if ! grep -q '^export TZ=' \$HOME/.bashrc 2>/dev/null; then
@@ -429,8 +437,14 @@ export NVM_DIR="$HOME/.nvm"
 source "$NVM_DIR/nvm.sh"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
-export CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN"
 export TZ="$TIMEZONE"
+
+# Resolve absolute path to claude so tmux shell doesn't need nvm in PATH
+CLAUDE_BIN="$(which claude)"
+if [ -z "$CLAUDE_BIN" ]; then
+  echo "Error: claude binary not found. Is nvm/node installed?"
+  exit 1
+fi
 
 SESSION="assistant"
 
@@ -441,11 +455,8 @@ else
   echo "Starting new Claude Code session..."
   tmux new-session -d -s "$SESSION" -x 220 -y 50 \
     -e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" \
-    -e "TZ=$TZ" \
-    -e "NVM_DIR=$NVM_DIR" \
-    -e "BUN_INSTALL=$BUN_INSTALL" \
-    -e "PATH=$PATH"
-  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
+    -e "TZ=$TZ"
+  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ${CLAUDE_BIN} --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
   echo "Session started. Attaching..."
   tmux attach -t "$SESSION"
 fi
