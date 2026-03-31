@@ -407,31 +407,13 @@ info "Discord plugin installed."
 info "Writing CLAUDE.md..."
 
 cat > "${AGENT_WORKDIR}/CLAUDE.md" <<'CLAUDEMD'
-# Personal Assistant Configuration
+# Bootstrap
 
-## Persona
-Read and follow all instructions in ${PERSONA_LOCAL}/AGENTS.md before doing anything else.
-This file contains your persona, rules, and preferences.
+Before doing anything else, read the full contents of
+${PERSONA_LOCAL}/AGENTS.md and follow all
+instructions within it.
 
-## Environment
-- Vault location: ~/vault/
-- Timezone: See TZ environment variable
-- Tasks folder: ~/vault/Tasks/
-- Daily notes: ~/vault/Daily/
-
-## Task file format (YAML frontmatter)
-Every task note should use:
-  status: pending | done | cancelled
-  due: YYYY-MM-DD
-  priority: high | medium | low
-  created: YYYY-MM-DD
-
-## Rules
-- Always reply in Traditional Chinese (繁體中文)
-- Keep Discord messages concise, under 5 lines
-- When adding a task, always fill in the `created` field with today's date
-- When completing a task, update status to `done` and add a `completed` field
-- Never delete vault files without explicit confirmation
+Do not proceed until you have read that file.
 CLAUDEMD
 sed -i "s|\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/CLAUDE.md"
 
