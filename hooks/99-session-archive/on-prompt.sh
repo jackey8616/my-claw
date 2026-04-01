@@ -1,7 +1,8 @@
 #!/bin/bash
-# UserPromptSubmit hook — intercepts !session-clear, summarizes, then clears session
+# UserPromptSubmit hook — intercepts !archive, summarizes, then exit session
 
 LOGFILE="/tmp/session-archiver-debug.log"
+HOOK_DIR="$(dirname "$0")"
 INPUT=$(cat)
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // ""')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
@@ -18,9 +19,15 @@ log "CHANNEL_TEXT='$CHANNEL_TEXT'"
 if [ "$CHANNEL_TEXT" = "!archive" ]; then
   log "!archive matched! Transcript: $TRANSCRIPT_PATH"
   (
-    bash /home/laura/my-claw/hooks/session-archiver/archive.sh "$TRANSCRIPT_PATH"
-    log "Archive done. Sending /clear to tmux..."
-    tmux send-keys -t "assistant:0.0" "/clear" Enter
+    bash "$HOOK_DIR/archive.sh" "$TRANSCRIPT_PATH"
+    log "Archive done. Sending /exit to tmux..."
+    tmux send-keys -t "assistant:0.0" "/exit" Enter
+    sleep 3
+    log "Restarting claude..."
+    tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
+    sleep 15
+    log "Sending initial prompt..."
+    tmux send-keys -t "assistant:0.0" "Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883." Enter
   ) >> "$LOGFILE" 2>&1 &
   disown
   echo '{"decision": "block", "reason": "Archiving session and resetting..."}'

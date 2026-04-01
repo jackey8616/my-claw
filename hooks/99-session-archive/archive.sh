@@ -10,7 +10,23 @@ DAILY_NOTE="$DAILY_DIR/$DATE.md"
 HOOK_SETTINGS="$(dirname "$0")/claude-hook-settings.json"
 LOGFILE="/tmp/session-archiver-debug.log"
 
+# Load .env for Discord credentials
+ENV_FILE="$(dirname "$0")/../../.env"
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+DISCORD_CHANNEL_ID="1486128557444042883"
+
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"; }
+
+discord_notify() {
+  local msg="$1"
+  [ -z "$DISCORD_BOT_TOKEN" ] && return
+  local payload
+  payload=$(jq -n --arg content "$msg" '{"content": $content}')
+  curl -s -X POST "https://discord.com/api/v10/channels/${DISCORD_CHANNEL_ID}/messages" \
+    -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$payload" >> "$LOGFILE" 2>&1
+}
 
 # Ensure daily note exists
 if [ ! -f "$DAILY_NOTE" ]; then
@@ -87,8 +103,7 @@ if [ -z "$SESSION_LOG_CONTENT" ]; then
   log "Claude failed to generate session log"
   cat >> "$DAILY_NOTE" <<EOF
 
-### $TIMESTAMP - Session 結束（摘要生成失敗）
-
+### $TIMESTAMP - Session 結束（摘要生成失
 EOF
   exit 0
 fi
@@ -135,4 +150,7 @@ EOF
 
 log "Session log written to $LOG_PATH"
 log "Daily note updated: $DAILY_NOTE"
+
+log "Session archived: ${LOG_TITLE//-/ } — ${LOG_SUMMARY:-（無摘要）}"
+
 exit 0
