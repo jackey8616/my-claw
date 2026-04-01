@@ -19,6 +19,7 @@ set -e
 #   6.  Install Node.js + Claude Code (native)
 #   7.  Install Bun (required for Channels plugins)
 #   8.  Configure Claude Code auth (OAuth Token)
+#   8.2 Configure MCP: memory server
 #   8.5 Configure Claude Code Hooks
 #   9.  Install Discord Channels plugin
 #   10. Write CLAUDE.md pointing to Persona in vault
@@ -330,6 +331,23 @@ CLAUDEJSON
 "
 
 # ============================================================
+# 8.2 Configure MCP: memory server
+# ============================================================
+info "Configuring Claude Code mcps..."
+
+sudo -u "$AGENT_USER" bash -c "
+  export NVM_DIR=\"\$HOME/.nvm\"
+  source \"\$NVM_DIR/nvm.sh\"
+  export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"
+
+  claude mcp add --scope user memory \
+    -e MEMORY_FILE_PATH=${PERSONA_LOCAL}/memory.json \
+    -- npx -y @modelcontextprotocol/server-memory
+"
+
+info "mcps installed."
+
+# ============================================================
 # 8.5 Configure Claude Code Hooks
 # ============================================================
 info "Configuring Claude Code hooks..."
@@ -376,6 +394,8 @@ sudo -u "$AGENT_USER" bash -c "
 
   chmod 600 \"\$GLOBAL_SETTINGS\"
 "
+
+info "hooks installed."
 
 # ============================================================
 # 9. Install Discord Channels plugin
