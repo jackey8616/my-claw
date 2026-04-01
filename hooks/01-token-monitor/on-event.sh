@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Load .env for Discord credentials
 ENV_FILE="$HOOK_DIR/../../.env"
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
