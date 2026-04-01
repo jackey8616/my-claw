@@ -351,7 +351,7 @@ sudo -u "$AGENT_USER" bash -c "
   jq 'del(.hooks)' \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
   mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
 
-  # 依資料夾名稱排序，逐一讀取 claude_event_name 並註冊所有 .sh
+  # 依資料夾名稱排序，逐一讀取 claude_event_name 並註冊 on-event.sh
   find '${HOOKS_DIR}' -mindepth 1 -maxdepth 1 -type d | sort | while read -r hook_dir; do
     EVENT_FILE=\"\${hook_dir}/claude_event_name\"
 
@@ -361,13 +361,17 @@ sudo -u "$AGENT_USER" bash -c "
     fi
 
     EVENT=\$(cat \"\$EVENT_FILE\" | tr -d '[:space:]')
+    SCRIPT=\"\${hook_dir}/on-event.sh\"
 
-    find \"\$hook_dir\" -name '*.sh' | sort | while read -r script; do
-      jq \".hooks.\${EVENT} += [{\\\"hooks\\\": [{\\\"type\\\": \\\"command\\\", \\\"command\\\": \\\"\$script\\\"}]}]\" \
-        \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
-      mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
-      echo \"    Registered [\${EVENT}]: \$script\"
-    done
+    if [ ! -f \"\$SCRIPT\" ]; then
+      echo \"    Skipping [\${EVENT}]: on-event.sh not found in \$(basename \$hook_dir)\"
+      continue
+    fi
+
+    jq \".hooks.\${EVENT} += [{\\\"hooks\\\": [{\\\"type\\\": \\\"command\\\", \\\"command\\\": \\\"\$SCRIPT\\\"}]}]\" \
+      \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
+    mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
+    echo \"    Registered [\${EVENT}]: \$SCRIPT\"
   done
 
   chmod 600 \"\$GLOBAL_SETTINGS\"
