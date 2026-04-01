@@ -24,10 +24,7 @@ if [ "$CHANNEL_TEXT" = "!archive" ]; then
     tmux send-keys -t "assistant:0.0" "/exit" Enter
     sleep 3
     log "Restarting claude..."
-    tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
-    sleep 15
-    log "Sending initial prompt..."
-    tmux send-keys -t "assistant:0.0" "Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883." Enter
+    tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter
   ) >> "$LOGFILE" 2>&1 &
   disown
   echo '{"decision": "block", "reason": "Archiving session and resetting..."}'

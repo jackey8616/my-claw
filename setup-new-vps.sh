@@ -489,7 +489,7 @@ else
   tmux new-session -d -s "$SESSION" -x 220 -y 50 \
     -e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" \
     -e "TZ=$TZ"
-  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ${CLAUDE_BIN} --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter
+  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ${CLAUDE_BIN} --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
   echo "Session started. Attaching..."
   tmux attach -t "$SESSION"
 fi
