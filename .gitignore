@@ -1,1 +1,4 @@
 .env
+start-agent.sh
+docker-compose.yml
+CLAUDE.md
