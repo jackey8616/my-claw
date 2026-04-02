@@ -137,16 +137,16 @@ ${LOG_SUMMARY:-（無摘要）}
 ${LOG_BODY}
 EOF
 
-# Append session block to daily note
-cat >> "$DAILY_NOTE" <<EOF
+# Append session entry to ## Sessions section in daily note
+TIME_ONLY=$(TZ="${TZ:-UTC}" date '+%H:%M')
+LIST_ITEM="- [[01-Session-Logs/$LOG_FILENAME|${LOG_TITLE//-/ }]] \`$TIME_ONLY\`"
+LIST_SUB="  - ${LOG_SUMMARY:-（無摘要）}"
 
-### $TIMESTAMP - Session 結束
-
-📋 [[01-Session-Logs/$LOG_FILENAME|${LOG_TITLE//-/ }]]
-
-${LOG_SUMMARY:-（無摘要）}
-
-EOF
+if grep -q "^## Sessions" "$DAILY_NOTE"; then
+  printf '\n%s\n%s\n' "$LIST_ITEM" "$LIST_SUB" >> "$DAILY_NOTE"
+else
+  printf '\n## Sessions\n\n%s\n%s\n' "$LIST_ITEM" "$LIST_SUB" >> "$DAILY_NOTE"
+fi
 
 log "Session log written to $LOG_PATH"
 log "Daily note updated: $DAILY_NOTE"
