@@ -1,0 +1,13 @@
+{
+  "name": "laura-memory-mcp",
+  "version": "1.0.0",
+  "description": "Custom memory MCP server with aging and graph health tools",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  }
+}

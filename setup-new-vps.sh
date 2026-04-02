@@ -340,9 +340,10 @@ sudo -u "$AGENT_USER" bash -c "
   source \"\$NVM_DIR/nvm.sh\"
   export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"
 
-  claude mcp add --scope user memory \
+  cd ${AGENT_WORKDIR}/mcp-servers/memory && bun install --frozen-lockfile
+  claude mcp add memory bun \
     -e MEMORY_FILE_PATH=${PERSONA_LOCAL}/memory.json \
-    -- npx -y @modelcontextprotocol/server-memory
+    -- run ${AGENT_WORKDIR}/mcp-servers/memory/index.ts
 "
 
 info "mcps installed."
