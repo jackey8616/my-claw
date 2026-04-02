@@ -336,11 +336,14 @@ CLAUDEJSON
 info "Configuring Claude Code mcps..."
 
 sudo -u "$AGENT_USER" bash -c "
+  export BUN_INSTALL=\"\$HOME/.bun\"
+  export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
   export NVM_DIR=\"\$HOME/.nvm\"
   source \"\$NVM_DIR/nvm.sh\"
   export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"
 
   cd ${AGENT_WORKDIR}/mcp-servers/memory && bun install --frozen-lockfile
+  echo '    Memory server deps installed.'
   claude mcp add memory bun \
     -e MEMORY_FILE_PATH=${PERSONA_LOCAL}/memory.json \
     -- run ${AGENT_WORKDIR}/mcp-servers/memory/index.ts
