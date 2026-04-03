@@ -1,18 +1,20 @@
 #!/bin/bash
 # Session archiver — generates session log and updates daily note.
 
+MONTH=$(TZ="${TZ:-UTC}" date '+%Y-%m')
+DATE=$(TZ="${TZ:-UTC}" date '+%Y-%m-%d')
+
 VAULT_DIR="$HOME/vault"
-SESSION_LOGS_DIR="$VAULT_DIR/01-Session-Logs"
-DAILY_DIR="$VAULT_DIR/02-Daily-Notes"
+RELATIVE_SESSION_LOGS_DIR="01-Session-Logs/$DATE"
+SESSION_LOGS_DIR="$VAULT_DIR/$RELATIVE_SESSION_LOGS_DIR"
+DAILY_DIR="$VAULT_DIR/02-Daily-Notes/$MONTH"
 SESSION_TEMPLATE_PATH="$VAULT_DIR/templates/SESSION-LOG.md"
 DAILY_TEMPLATE_PATH="$VAULT_DIR/templates/DAILY-NOTE.md"
 
 TRANSCRIPT_PATH="${1:-}"
 
-MONTH=$(TZ="${TZ:-UTC}" date '+%Y-%m')
-DATE=$(TZ="${TZ:-UTC}" date '+%Y-%m-%d')
 TIME_START=$(TZ="${TZ:-UTC}" date '+%H:%M')
-DAILY_NOTE="$DAILY_DIR/$MONTH/$DATE.md"
+DAILY_NOTE="$DAILY_DIR/$DATE.md"
 
 HOOK_SETTINGS="{\"disableAllHooks\": true}"
 LOGFILE="/tmp/session-archiver-debug.log"
@@ -131,8 +133,8 @@ LOG_TITLE="${LOG_TITLE:-Session}"
 LOG_TITLE_SLUG=$(echo "$LOG_TITLE" | tr ' ' '-' | tr -cd '[:alnum:]-_')
 LOG_TITLE_SLUG="${LOG_TITLE_SLUG:-Session}"
 LOG_FILENAME="${DATE}_${LOG_TITLE_SLUG}.md"
-LOG_PATH="$SESSION_LOGS_DIR/$DATE/$LOG_FILENAME"
-LOG_REL_PATH="01-Session-Logs/$DATE/$LOG_FILENAME"   # vault-root relative, for frontmatter & wiki-links
+LOG_PATH="$SESSION_LOGS_DIR/$LOG_FILENAME"
+LOG_REL_PATH="$RELATIVE_SESSION_LOGS_DIR/$LOG_FILENAME"   # vault-root relative, for frontmatter & wiki-links
 
 # ---------------------------------------------------------------------------
 # Write session log file
