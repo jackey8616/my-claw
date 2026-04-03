@@ -210,10 +210,6 @@ F_SUMMARY_FIRST=$(echo "$RAW_JSON" | jq -r '.summary[0] // "（無摘要）"' 2>
 # tags → YAML list lines
 F_TAGS_YAML=$(echo "$RAW_JSON" | jq -r '.tags[]? | "  - " + .' 2>/dev/null || echo "  - session")
 
-# todos frontmatter → YAML list lines
-F_TODOS_YAML=$(echo "$RAW_JSON" | jq -r \
-  'if (.todos | length) == 0 then "  []"
-   else .todos[] | "  " + . end' 2>/dev/null || echo "  []")
 
 # knowledge_graph_updates → YAML list lines
 F_KGU_YAML=$(echo "$RAW_JSON" | jq -r \
@@ -241,10 +237,6 @@ replace_line "{{time}}"  "$DATE $TIME_START - $TIME_END UTC"
 # Replace first tag placeholder line, then delete any remaining {{tag-N}} lines
 replace_block "{{tag-1}}" "$F_TAGS_YAML"
 RENDERED=$(printf '%s' "$RENDERED" | grep -v '{{tag-')
-
-# --- frontmatter: todos block ---
-replace_block "{{todo-1}}" "$F_TODOS_YAML"
-RENDERED=$(printf '%s' "$RENDERED" | grep -v '{{todo-')
 
 # --- frontmatter: summary block scalar (each line already indented) ---
 replace_block "{{summary-line-1}}" "$F_SUMMARY_YAML"
