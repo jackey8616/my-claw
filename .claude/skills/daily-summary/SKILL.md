@@ -1,6 +1,6 @@
 ---
 name: daily-summary
-description: 將指定日期（預設今日）所有 SessionLog 整合為 DailyNote，包含跨 session 的知識彙整、靈感精選、未完成待辦與反思。可重複執行（冪等）。
+description: 將指定日期（預設昨日）所有 SessionLog 整合為 DailyNote，包含跨 session 的知識彙整、靈感精選、未完成待辦與反思。可重複執行（冪等）。
 disable-model-invocation: false
 context: fork
 argument-hint: [YYYY-MM-DD]
@@ -9,16 +9,16 @@ allowed-tools: Read Write Glob Bash mcp__plugin_discord_discord__reply mcp__memo
 
 ## 當前時間資訊
 
-!`TZ=UTC date '+TODAY=%Y-%m-%d'`
+!`TZ=UTC date '+TODAY=%Y-%m-%d'; TZ=UTC date -d yesterday '+YESTERDAY=%Y-%m-%d'`
 
 ## 目標日期
 
-若使用者傳入了日期參數（`$ARGUMENTS`），以該值作為 DATE；否則以上方 TODAY 的值作為 DATE。
+若使用者傳入了日期參數（`$ARGUMENTS`），以該值作為 DATE；否則以上方 YESTERDAY 的值作為 DATE。
 
 DATE 確定後，MONTH 取其前 7 碼（`YYYY-MM`）。
 
 範例：
-- `/daily-summary` → DATE = TODAY
+- `/daily-summary` → DATE = YESTERDAY
 - `/daily-summary 2026-04-03` → DATE = 2026-04-03
 
 ## 執行步驟
