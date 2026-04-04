@@ -19,7 +19,7 @@ set -e
 #   6.  Install Node.js + Claude Code (native)
 #   7.  Install Bun (required for Channels plugins)
 #   8.  Configure Claude Code auth (OAuth Token)
-#   8.2 Configure MCP: memory server
+#   8.2 Install MCP server dependencies (.mcp.json is in repo)
 #   8.5 Configure Claude Code Hooks
 #   9.  Install Discord Channels plugin
 #   10. Write CLAUDE.md pointing to Persona in vault
@@ -331,25 +331,19 @@ CLAUDEJSON
 "
 
 # ============================================================
-# 8.2 Configure MCP: memory server
+# 8.2 Install MCP server dependencies
 # ============================================================
-info "Configuring Claude Code mcps..."
+info "Installing MCP server dependencies..."
 
 sudo -u "$AGENT_USER" bash -c "
   export BUN_INSTALL=\"\$HOME/.bun\"
   export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
-  export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"
 
   cd ${AGENT_WORKDIR}/mcp-servers/memory && bun install --frozen-lockfile
   echo '    Memory server deps installed.'
-  claude mcp add memory bun \
-    -e MEMORY_FILE_PATH=${PERSONA_LOCAL}/memory.json \
-    -- run ${AGENT_WORKDIR}/mcp-servers/memory/index.ts
 "
 
-info "mcps installed."
+info "MCP deps installed. Config is in .mcp.json (checked into repo)."
 
 # ============================================================
 # 8.5 Configure Claude Code Hooks
