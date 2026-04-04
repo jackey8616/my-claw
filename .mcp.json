@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "memory": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "./mcp-servers/memory/index.ts"],
+      "env": {
+        "MEMORY_FILE_PATH": "../vault/00-Laura-Persona/memory.json"
+      }
+    }
+  }
+}
