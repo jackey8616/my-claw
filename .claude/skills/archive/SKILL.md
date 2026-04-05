@@ -143,11 +143,12 @@ DailyNote 路徑：`/home/laura/vault/02-Daily-Notes/{MONTH}/{DATE}.md`
 
 ### 步驟 6：重啟 session
 
-所有步驟完成後，用 Bash 背景執行重啟，讓新主題從乾淨的 session（新 JSONL）開始：
+所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後同步送 `/exit`（blocking 沒關係，這是最後一步）：
 
 ```bash
-(sleep 5 && tmux send-keys -t "assistant:0.0" "/exit" Enter && sleep 3 && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> /tmp/session-archiver-debug.log 2>&1 &
+CLAUDE_PID=$(pgrep -u laura -x claude | head -1) && (while kill -0 $CLAUDE_PID 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> /tmp/session-archiver-debug.log 2>&1 &
 disown
+tmux send-keys -t "assistant:0.0" "/exit" Enter
 ```
 
-這個指令會在背景執行，不阻塞目前回應。
+背景 process 不猜時間，等 Claude process 真正消失後才送啟動命令。
