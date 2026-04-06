@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__memory__open_nodes",
+      "mcp__memory__search_nodes",
+      "mcp__memory__create_entities",
+      "mcp__memory__add_observations",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}
