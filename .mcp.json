@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["node_modules/.bin/playwright-mcp", "--headless", "--no-sandbox", "--browser", "chromium"]
+    },
     "memory": {
       "type": "stdio",
       "command": "bun",
