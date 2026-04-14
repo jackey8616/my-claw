@@ -3,3 +3,6 @@
 start-agent.sh
 docker-compose.yml
 CLAUDE.md
+node_modules/
+.playwright-mcp/
+mcp-servers/vault-search/

@@ -2,12 +2,21 @@
 name: archive
 description: 收到 !archive 指令、主題自然結束、或對話輪數過多時，封存本次 session 至 vault、更新 DailyNote、同步 memory graph，並通知 Discord。
 disable-model-invocation: false
-allowed-tools: Read Write Bash mcp__plugin_discord_discord__reply mcp__memory__create_entities mcp__memory__create_relations mcp__memory__add_observations
+allowed-tools: Read Write Bash mcp__plugin_discord_discord__reply
 ---
 
 ## 當前時間資訊
 
-!`TZ=UTC date '+DATE=%Y-%m-%d MONTH=%Y-%m TIME=%H:%M'`
+!`TZ=UTC date '+NOW_DATE=%Y-%m-%d NOW_MONTH=%Y-%m NOW_TIME=%H:%M'`
+
+## 日期判定規則
+
+查看對話歷史中**第一則**帶有 `ts="..."` 屬性的 `<channel>` 標籤，取出其 UTC 日期（YYYY-MM-DD），記為 SESSION_START_DATE。
+
+- 若 SESSION_START_DATE == NOW_DATE（或找不到 ts）：使用 NOW_DATE 作為 DATE、NOW_MONTH 作為 MONTH。
+- 若 SESSION_START_DATE < NOW_DATE（跨日 session）：使用 SESSION_START_DATE 作為 DATE，SESSION_START_DATE 前 7 碼作為 MONTH（例：`2026-04-12` → `2026-04`）。
+
+後續所有步驟的 `{DATE}` 與 `{MONTH}` 均使用此判定結果。
 
 ## 執行步驟
 
@@ -127,10 +136,31 @@ DailyNote 路徑：`/home/laura/vault/02-Daily-Notes/{MONTH}/{DATE}.md`
 
 ### 步驟 4：同步 memory graph
 
-從本次對話中識別新的知識節點與關聯：
-- 對每個新概念，使用 `mcp__memory__create_entities` 建立節點
-- 對每個關聯，使用 `mcp__memory__create_relations` 建立邊
-- 若有重要觀察，使用 `mcp__memory__add_observations` 補充
+從本次對話中識別新的知識節點與關聯，整理成以下 JSON 格式：
+
+```json
+{
+  "entities": [
+    { "name": "NodeName", "entityType": "concept", "observations": ["說明"] }
+  ],
+  "relations": [
+    { "from": "NodeA", "to": "NodeB", "relationType": "relates_to" }
+  ],
+  "observations": [
+    { "entityName": "NodeName", "contents": ["補充觀察"] }
+  ]
+}
+```
+
+整理完成後，透過 Bash 呼叫 memory-agent-invoke Skill 寫入：
+
+```bash
+claude --agent memory-agent \
+  --allowedTools "mcp__memory__create_entities,mcp__memory__create_relations,mcp__memory__add_observations,mcp__memory__delete_entities,mcp__memory__delete_observations,mcp__memory__compact_graph" \
+  -p '<上面的 JSON>'
+```
+
+不直接呼叫 `mcp__memory__*` 工具。
 
 ### 步驟 5：通知 Discord
 
@@ -143,12 +173,12 @@ DailyNote 路徑：`/home/laura/vault/02-Daily-Notes/{MONTH}/{DATE}.md`
 
 ### 步驟 6：重啟 session
 
-所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後同步送 `/exit`（blocking 沒關係，這是最後一步）：
+所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後用 `kill -TERM` 終止當前 process（Discord 連線模式下 `/exit` 無法正確退出）：
 
 ```bash
 CLAUDE_PID=$(pgrep -u laura -x claude | head -1) && (while kill -0 $CLAUDE_PID 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> /tmp/session-archiver-debug.log 2>&1 &
 disown
-tmux send-keys -t "assistant:0.0" "/exit" Enter
+kill -TERM $CLAUDE_PID
 ```
 
-背景 process 不猜時間，等 Claude process 真正消失後才送啟動命令。
+背景 process 等 Claude process 真正消失（SIGTERM 後）才送啟動命令。
