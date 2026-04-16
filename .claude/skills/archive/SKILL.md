@@ -5,10 +5,6 @@ disable-model-invocation: false
 allowed-tools: Read Write Bash mcp__plugin_discord_discord__reply
 ---
 
-## 當前時間資訊
-
-!`TZ=UTC date '+NOW_DATE=%Y-%m-%d NOW_MONTH=%Y-%m NOW_TIME=%H:%M'`
-
 ## 日期判定規則
 
 查看對話歷史中**第一則**帶有 `ts="..."` 屬性的 `<channel>` 標籤，取出其 UTC 日期（YYYY-MM-DD），記為 SESSION_START_DATE。
@@ -21,6 +17,14 @@ allowed-tools: Read Write Bash mcp__plugin_discord_discord__reply
 ## 執行步驟
 
 依序完成以下所有步驟，不要省略任何一步。
+
+### 步驟 0：取得當前時間
+
+使用 Bash 工具執行以下指令，取得 NOW_DATE、NOW_MONTH、NOW_TIME：
+
+```bash
+TZ=UTC date '+NOW_DATE=%Y-%m-%d NOW_MONTH=%Y-%m NOW_TIME=%H:%M'
+```
 
 ### 步驟 1：產出 SessionLog 內容
 
