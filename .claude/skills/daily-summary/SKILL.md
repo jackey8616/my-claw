@@ -7,23 +7,28 @@ argument-hint: [YYYY-MM-DD]
 allowed-tools: Read Write Glob Bash mcp__plugin_discord_discord__reply mcp__memory__add_observations
 ---
 
-## 當前時間資訊
-
-!`TZ=UTC date '+TODAY=%Y-%m-%d'; TZ=UTC date -d yesterday '+YESTERDAY=%Y-%m-%d'`
-
 ## 目標日期
 
-若使用者傳入了日期參數（`$ARGUMENTS`），以該值作為 DATE；否則以上方 YESTERDAY 的值作為 DATE。
+若使用者傳入了日期參數（`$ARGUMENTS`），以該值作為 DATE；否則以 YESTERDAY 作為 DATE（執行步驟 0 取得）。
 
 DATE 確定後，MONTH 取其前 7 碼（`YYYY-MM`）。
 
 範例：
-- `/daily-summary` → DATE = YESTERDAY
+- `/daily-summary` → DATE = YESTERDAY（由步驟 0 取得）
 - `/daily-summary 2026-04-03` → DATE = 2026-04-03
 
 ## 執行步驟
 
 依序完成以下所有步驟，不要省略任何一步。
+
+### 步驟 0：確認目標日期
+
+若 `$ARGUMENTS` 為空，使用 Bash 工具執行以下指令取得 YESTERDAY，並以此作為 DATE：
+```bash
+TZ=UTC date -d yesterday '+%Y-%m-%d'
+```
+
+若 `$ARGUMENTS` 非空，直接以 `$ARGUMENTS` 作為 DATE，跳過此 Bash 呼叫。
 
 ### 步驟 1：讀取指定日期所有 SessionLog
 
