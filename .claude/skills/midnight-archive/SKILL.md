@@ -41,9 +41,9 @@ json.dump(d, open(path, 'w'), indent=2)
 fi
 ```
 
-### 步驟 3：取得 PID、送出 !archive、立即還原 Discord 存取
+### 步驟 3：取得 PID、送出 !archive、背景監聽恢復
 
-取得 main session 的 Claude PID，送出 !archive，**立即還原** access.json（不等 PID 消失），再啟動背景安全網。
+先取得 main session 的 Claude PID，再送出 !archive，最後在背景等待該 PID 消失後立即還原 access.json：
 
 ```bash
 TMUX_TARGET="${ARGUMENTS:-assistant:0.0}"
@@ -58,18 +58,14 @@ echo "Main session PID: ${CLAUDE_PID:-unknown}"
 tmux send-keys -t "$TMUX_TARGET" "!archive" Enter
 echo "Sent !archive to $TMUX_TARGET"
 
-# 立即還原 access.json（archive skill 的步驟 5 需要能通知 Discord）
-cp "${ACCESS_FILE}.bak" "$ACCESS_FILE"
-echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] Discord access restored immediately after sending !archive" >> /tmp/midnight-archive.log
-
-# 背景安全網：若上方還原失敗，等 PID 消失後再還原一次
+# 背景：等 PID 消失後立即還原（不固定等 120 秒）
 (
   if [ -n "$CLAUDE_PID" ]; then
     while kill -0 "$CLAUDE_PID" 2>/dev/null; do sleep 1; done
   fi
   cp "${ACCESS_FILE}.bak" "$ACCESS_FILE"
-  echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] Discord access safety-restore (PID ${CLAUDE_PID:-unknown} exited)" >> /tmp/midnight-archive.log
+  echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] Discord access restored (PID ${CLAUDE_PID:-unknown} exited)" >> /tmp/midnight-archive.log
 ) &
 disown
-echo "Safety watcher started for PID ${CLAUDE_PID:-unknown}"
+echo "Restore watching PID ${CLAUDE_PID:-unknown}"
 ```
