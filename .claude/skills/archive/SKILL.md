@@ -164,18 +164,14 @@ claude --agent memory-agent \
 
 ### 步驟 5：通知 Discord
 
-使用 `mcp__plugin_discord_discord__reply` 發送至頻道 `1486128557444042883`：
+若 `$ARGUMENTS` 為 `silent`，跳過此步驟。
+
+否則使用 `mcp__plugin_discord_discord__reply` 發送至頻道 `1486128557444042883`：
 
 ```
 📝 Session archived: **{title}**
 {summary 第 1 行}
 ```
-
-**重要**：直接呼叫 `mcp__plugin_discord_discord__reply` 即可。
-- 不要讀取或檢查 `~/.claude/channels/discord/access.json`
-- 不要修改 `allowFrom` 或任何 access.json 欄位
-- `allowFrom` 只控制**收訊**過濾，不影響**發訊**（outgoing reply 永遠可以送出）
-- `access.json` 的管理完全由 midnight-archive 負責，archive skill 無需介入
 
 ### 步驟 6：重啟 session
 

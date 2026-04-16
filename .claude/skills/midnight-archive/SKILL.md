@@ -54,9 +54,9 @@ PANE_PID=$(tmux list-panes -t "$TMUX_TARGET" -F "#{pane_pid}" 2>/dev/null | head
 CLAUDE_PID=$(pgrep -P "$PANE_PID" -x claude 2>/dev/null | head -1)
 echo "Main session PID: ${CLAUDE_PID:-unknown}"
 
-# 送出 !archive
-tmux send-keys -t "$TMUX_TARGET" "!archive" Enter
-echo "Sent !archive to $TMUX_TARGET"
+# 送出 !archive silent（靜默模式：跳過 Discord 通知，新 session 啟動後自然問候）
+tmux send-keys -t "$TMUX_TARGET" "!archive silent" Enter
+echo "Sent !archive silent to $TMUX_TARGET"
 
 # 背景：等 PID 消失後立即還原（不固定等 120 秒）
 (
