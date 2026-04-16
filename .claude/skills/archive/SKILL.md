@@ -171,6 +171,12 @@ claude --agent memory-agent \
 {summary 第 1 行}
 ```
 
+**重要**：直接呼叫 `mcp__plugin_discord_discord__reply` 即可。
+- 不要讀取或檢查 `~/.claude/channels/discord/access.json`
+- 不要修改 `allowFrom` 或任何 access.json 欄位
+- `allowFrom` 只控制**收訊**過濾，不影響**發訊**（outgoing reply 永遠可以送出）
+- `access.json` 的管理完全由 midnight-archive 負責，archive skill 無需介入
+
 ### 步驟 6：重啟 session
 
 所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後用 `kill -TERM` 終止當前 process（Discord 連線模式下 `/exit` 無法正確退出）：
