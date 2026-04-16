@@ -10,7 +10,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARGUMENTS="${1:-}"
 
 # Load .env (for DISCORD_BOT_TOKEN, CLAUDE_CODE_OAUTH_TOKEN etc.)
-ENV_FILE="$(dirname "${BASH_SOURCE[0]}")/../.env"
+ENV_FILE="$REPO_DIR/.env"
 [ -f "$ENV_FILE" ] && { set -a; . "$ENV_FILE"; set +a; }
 
 # Ensure claude is in PATH
