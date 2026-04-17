@@ -3,19 +3,27 @@ name: daily-summary
 description: 將指定日期（預設昨日）所有 SessionLog 整合為 DailyNote，包含跨 session 的知識彙整、靈感精選、未完成待辦與反思。可重複執行（冪等）。
 disable-model-invocation: false
 context: fork
-argument-hint: [YYYY-MM-DD]
+argument-hint: [YYYY-MM-DD] [silent]
 allowed-tools: Read Write Glob Bash mcp__plugin_discord_discord__reply mcp__memory__add_observations
 ---
 
-## 目標日期
+## 參數解析
 
-若使用者傳入了日期參數（`$ARGUMENTS`），以該值作為 DATE；否則以 YESTERDAY 作為 DATE（執行步驟 0 取得）。
-
-DATE 確定後，MONTH 取其前 7 碼（`YYYY-MM`）。
+`$ARGUMENTS` 可包含：
+- 日期（`YYYY-MM-DD` 格式，可選）：指定目標日期，預設昨日
+- `silent`（可選）：跳過步驟 5 的 Discord 通知
 
 範例：
-- `/daily-summary` → DATE = YESTERDAY（由步驟 0 取得）
-- `/daily-summary 2026-04-03` → DATE = 2026-04-03
+- `/daily-summary` → 昨日、發通知
+- `/daily-summary silent` → 昨日、不發通知
+- `/daily-summary 2026-04-03` → 指定日期、發通知
+- `/daily-summary 2026-04-03 silent` → 指定日期、不發通知
+
+從 `$ARGUMENTS` 中：
+- 若包含符合 `YYYY-MM-DD` 格式的字串，取為 DATE；否則使用 YESTERDAY（步驟 0 取得）
+- 若包含 `silent`，步驟 5 跳過
+
+DATE 確定後，MONTH 取其前 7 碼（`YYYY-MM`）。
 
 ## 執行步驟
 
@@ -23,12 +31,12 @@ DATE 確定後，MONTH 取其前 7 碼（`YYYY-MM`）。
 
 ### 步驟 0：確認目標日期
 
-若 `$ARGUMENTS` 為空，使用 Bash 工具執行以下指令取得 YESTERDAY，並以此作為 DATE：
+若 `$ARGUMENTS` 中不含 `YYYY-MM-DD` 格式的字串，使用 Bash 取得 YESTERDAY 作為 DATE：
 ```bash
 TZ=UTC date -d yesterday '+%Y-%m-%d'
 ```
 
-若 `$ARGUMENTS` 非空，直接以 `$ARGUMENTS` 作為 DATE，跳過此 Bash 呼叫。
+若 `$ARGUMENTS` 中含有 `YYYY-MM-DD` 格式的字串，直接以該值作為 DATE，跳過此 Bash 呼叫。
 
 ### 步驟 1：讀取指定日期所有 SessionLog
 
@@ -121,7 +129,9 @@ summary: {summary_one_line}
 
 ### 步驟 5：通知 Discord
 
-使用 `mcp__plugin_discord_discord__reply` 發送至頻道 `1486128557444042883`：
+若 `$ARGUMENTS` 包含 `silent`，跳過此步驟。
+
+否則使用 `mcp__plugin_discord_discord__reply` 發送至頻道 `1486128557444042883`：
 
 ```
 📅 Daily summary updated: {DATE}

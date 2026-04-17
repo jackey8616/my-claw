@@ -7,7 +7,6 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARGUMENTS="${1:-}"
 
 # Load .env (for DISCORD_BOT_TOKEN, CLAUDE_CODE_OAUTH_TOKEN etc.)
 ENV_FILE="$REPO_DIR/.env"
@@ -19,9 +18,17 @@ export NVM_DIR="$HOME/.nvm"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Invoke the skill by name; let Claude handle skill loading and tool permissions
-PROMPT="/daily-summary${ARGUMENTS:+ $ARGUMENTS}"
+echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] daily-summary started"
+
+# Default to silent mode when no explicit argument is given
+if [ -z "${1:-}" ]; then
+  PROMPT="/daily-summary silent"
+else
+  PROMPT="/daily-summary $1"
+fi
 
 cd "$REPO_DIR"
 claude -p "$PROMPT" --dangerously-skip-permissions \
   --settings '{"disableAllHooks": true}'
+
+echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] daily-summary done (exit $?)"
