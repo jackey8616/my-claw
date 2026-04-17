@@ -22,6 +22,10 @@ export NVM_DIR="$HOME/.nvm"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
+echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] weekly-ingest started"
+
 cd "$REPO_DIR"
 claude -p "/weekly-ingest${ARGUMENTS:+ $ARGUMENTS}" --dangerously-skip-permissions \
   --settings '{"disableAllHooks": true}'
+
+echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] weekly-ingest done (exit $?)"
