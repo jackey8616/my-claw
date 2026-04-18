@@ -12,19 +12,18 @@ set -e
 #
 # What this script does:
 #   1.  Create a dedicated user
-#   2.  Install Docker
+#   2.  Install Docker (general purpose, no longer used for vault sync)
 #   3.  Move workdir to agent home
-#   4.  Write docker-compose.yml for Syncthing
-#   5.  Syncthing setup & Obsidian Vault sync
-#   6.  Install Node.js + Claude Code (native)
-#   7.  Install Bun (required for Channels plugins)
-#   8.  Configure Claude Code auth (OAuth Token)
-#   8.2 Install MCP server dependencies (.mcp.json is in repo)
-#   8.5 Configure Claude Code Hooks
-#   9.  Install Discord Channels plugin
-#   10. Write CLAUDE.md pointing to Persona in vault
-#   11. Write tmux startup script
-#   12. Firewall
+#   4.  Install rclone + configure Cloudflare R2 + systemd vault mount
+#   5.  Install Node.js + Claude Code (native)
+#   6.  Install Bun (required for Channels plugins)
+#   7.  Configure Claude Code auth (OAuth Token)
+#   7.2 Install MCP server dependencies (.mcp.json is in repo)
+#   7.5 Configure Claude Code Hooks
+#   8.  Install Discord Channels plugin
+#   9.  Write CLAUDE.md pointing to Persona in vault
+#   10. Write tmux startup script
+#   11. Firewall
 # ============================================================
 
 # ============================================================
@@ -80,8 +79,11 @@ touch .env
 
 info "Loading configuration..."
 AGENT_USER=$(load_env "AGENT_USER" "dedicated user name (e.g. myagent)")
-REMOTE_DEVICE_ID=$(load_env "REMOTE_DEVICE_ID" "Syncthing Device ID of your Mac/PC")
-VAULT_ID=$(load_env "VAULT_ID" "Syncthing Folder ID of your Obsidian Vault")
+R2_ACCOUNT_ID=$(load_env "R2_ACCOUNT_ID" "Cloudflare Account ID (from R2 dashboard)")
+R2_ACCESS_KEY_ID=$(load_env "R2_ACCESS_KEY_ID" "R2 API Token Access Key ID (vps-rclone token)")
+R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Access Key (vps-rclone token)")
+R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name (e.g. laura-vault)")
+R2_E2E_PASSWORD=$(load_env "R2_E2E_PASSWORD" "Remotely Save E2E encryption password (shared with Mac/iPhone)")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 CLAUDE_CODE_OAUTH_TOKEN=$(load_env "CLAUDE_CODE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
@@ -135,105 +137,89 @@ fi
 export WORKDIR="$AGENT_WORKDIR"
 
 # ============================================================
-# 4. Write docker-compose.yml for Syncthing
+# 4. Install rclone + configure Cloudflare R2 + systemd vault mount
 # ============================================================
-info "Writing docker-compose.yml..."
+info "Installing rclone..."
+if command -v rclone &>/dev/null; then
+  warning "rclone already installed ($(rclone --version | head -1)), skipping."
+else
+  curl -fsSL https://rclone.org/install.sh | bash
+fi
 
-cat > "${WORKDIR}/docker-compose.yml" <<COMPOSE
-services:
-  syncthing:
-    image: syncthing/syncthing:latest
-    container_name: agent-syncthing
-    hostname: agent-syncthing
-    restart: unless-stopped
-    environment:
-      - PUID=1000
-      - PGID=1000
-    ports:
-      - "8384:8384"     # Web UI (close after setup)
-      - "22000:22000"   # Sync protocol
-    volumes:
-      - ${VAULT_LOCAL}:/data/vault
-      - syncthing-config:/var/syncthing
+info "Configuring rclone R2 remote for ${AGENT_USER}..."
+sudo -u "$AGENT_USER" bash -c "
+  mkdir -p \$HOME/.config/rclone
+  cat > \$HOME/.config/rclone/rclone.conf <<RCLONECONF
+[r2]
+type = s3
+provider = Cloudflare
+access_key_id = ${R2_ACCESS_KEY_ID}
+secret_access_key = ${R2_SECRET_ACCESS_KEY}
+endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+acl = private
+RCLONECONF
+  chmod 600 \$HOME/.config/rclone/rclone.conf
+  echo '    rclone config written.'
+"
 
-volumes:
-  syncthing-config:
-COMPOSE
+info "Verifying R2 connection..."
+sudo -u "$AGENT_USER" bash -c "
+  rclone lsd r2:${R2_BUCKET_NAME} --max-depth 1 2>&1 | head -5 || true
+"
 
-chown "${AGENT_USER}:${AGENT_USER}" "${WORKDIR}/docker-compose.yml"
-
-# ============================================================
-# 5. Syncthing setup & Obsidian Vault sync
-# ============================================================
-info "Starting Syncthing..."
+info "Creating vault directory and setting up systemd mount service..."
 mkdir -p "$VAULT_LOCAL"
+apt-get install -y -qq fuse3
 chown -R "${AGENT_USER}:${AGENT_USER}" "$VAULT_LOCAL"
 
-cd "$WORKDIR"
-sudo -u "$AGENT_USER" docker compose up -d syncthing
-sleep 10
+RCLONE_BIN=$(which rclone)
+cat > /etc/systemd/system/vault-mount.service <<SYSTEMD
+[Unit]
+Description=rclone R2 vault FUSE mount
+After=network-online.target
+Wants=network-online.target
 
-# Extract API key — call from host (Syncthing v2.0 image has no curl)
-info "Waiting for Syncthing API to be ready..."
-SYNCTHING_CONFIG_DIR=$(docker volume inspect \
-  "$(basename $WORKDIR)_syncthing-config" \
-  --format '{{.Mountpoint}}')
-SYNCTHING_CONFIG_FILE="${SYNCTHING_CONFIG_DIR}/config/config.xml"
-API_KEY=$(sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' "$SYNCTHING_CONFIG_FILE" | head -1)
+[Service]
+Type=forking
+User=${AGENT_USER}
+ExecStartPre=/bin/mkdir -p ${VAULT_LOCAL}
+ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${VAULT_LOCAL} \\
+  --vfs-cache-mode full \\
+  --vfs-cache-max-age 24h \\
+  --vfs-cache-max-size 500M \\
+  --daemon \\
+  --log-file /var/log/rclone-vault.log \\
+  --log-level INFO
+ExecStop=/bin/fusermount -uz ${VAULT_LOCAL}
+Restart=on-failure
+RestartSec=10
 
-# Setup listen address
-sed -i 's|<listenAddress>tcp://default</listenAddress>|<listenAddress>tcp://0.0.0.0</listenAddress>|g' "$SYNCTHING_CONFIG_FILE"
+[Install]
+WantedBy=multi-user.target
+SYSTEMD
 
-# Get this machine's Device ID
-DEVICE_ID=$(curl -sf \
-  -H "X-Api-Key: $API_KEY" \
-  http://127.0.0.1:8384/rest/system/status | jq -r '.myID')
+systemctl daemon-reload
+systemctl enable vault-mount.service
+systemctl start vault-mount.service
 
-info "This VPS Syncthing Device ID:"
-echo ""
-echo "  >>>  ${DEVICE_ID}  <<<"
-echo ""
+info "Waiting for vault mount to settle..."
+sleep 5
 
-# Add remote device (your Mac/PC)
-info "Adding remote device..."
-curl -s -X POST \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"deviceID\": \"${REMOTE_DEVICE_ID}\",
-    \"name\": \"LocalMachine\",
-    \"autoAcceptFolders\": true
-  }" \
-  http://127.0.0.1:8384/rest/config/devices > /dev/null
-
-# Add Obsidian Vault folder
-info "Adding Obsidian Vault folder..."
-curl -s -X POST \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"id\": \"${VAULT_ID}\",
-    \"label\": \"Obsidian Vault\",
-    \"path\": \"/data/vault\",
-    \"type\": \"sendreceive\",
-    \"devices\": [
-      {\"deviceID\": \"${REMOTE_DEVICE_ID}\"}
-    ]
-  }" \
-  http://127.0.0.1:8384/rest/config/folders > /dev/null
-
-info "Syncthing configured. Now share the Vault folder to this device from your local Syncthing."
-pause "Press Enter after Vault is fully synced..."
+if mountpoint -q "$VAULT_LOCAL"; then
+  info "Vault mounted successfully at ${VAULT_LOCAL}."
+else
+  warning "Vault mount may not be ready yet. Check: systemctl status vault-mount.service"
+fi
 
 # Verify vault has AGENTS.md
 if [ ! -f "${PERSONA_LOCAL}/AGENTS.md" ]; then
-  warning "AGENTS.md not found in vault root (${PERSONA_LOCAL}/AGENTS.md)."
-  warning "Make sure you have AGENTS.md in your Obsidian Vault root before proceeding."
+  warning "AGENTS.md not found (${PERSONA_LOCAL}/AGENTS.md)."
+  warning "Make sure Mac has synced vault to R2 before this step."
   pause "Press Enter to continue anyway..."
 fi
 
 # ============================================================
-# 6. Install Node.js + Claude Code (native, not Docker)
+# 5. Install Node.js + Claude Code (native, not Docker)
 # ============================================================
 CLAUDE_CODE_VERSION="2.1.86"
 
@@ -291,7 +277,7 @@ sudo -u "$AGENT_USER" bash -c '
 '
 
 # ============================================================
-# 7. Install Bun (required for Claude Code Channels plugins)
+# 6. Install Bun (required for Claude Code Channels plugins)
 # ============================================================
 info "Installing Bun..."
 sudo -u "$AGENT_USER" bash -c '
@@ -310,7 +296,7 @@ sudo -u "$AGENT_USER" bash -c '
 '
 
 # ============================================================
-# 8. Configure Claude Code auth (OAuth Token)
+# 7. Configure Claude Code auth (OAuth Token)
 # ============================================================
 info "Setting up Claude Code authentication..."
 sudo -u "$AGENT_USER" bash -c "
@@ -338,7 +324,7 @@ CLAUDEJSON
 "
 
 # ============================================================
-# 8.2 Install MCP server dependencies
+# 7.2 Install MCP server dependencies
 # ============================================================
 info "Installing MCP server dependencies..."
 
@@ -353,7 +339,7 @@ sudo -u "$AGENT_USER" bash -c "
 info "MCP deps installed. Config is in .mcp.json (checked into repo)."
 
 # ============================================================
-# 8.3 Install Playwright + Chromium (for fetch-external MCP)
+# 7.3 Install Playwright + Chromium (for fetch-external MCP)
 # ============================================================
 info "Installing Playwright MCP + Chromium..."
 
@@ -392,7 +378,7 @@ sudo -u "$AGENT_USER" bash -c "
 info "Playwright + Chromium ready."
 
 # ============================================================
-# 8.4 GitHub integration (optional: GH_TOKEN + GPG signing)
+# 7.4 GitHub integration (optional: GH_TOKEN + GPG signing)
 # ============================================================
 info "GitHub integration (optional)..."
 
@@ -446,7 +432,7 @@ else
 fi
 
 # ============================================================
-# 8.5 Configure Claude Code Hooks
+# 7.5 Configure Claude Code Hooks
 # ============================================================
 info "Configuring Claude Code hooks..."
 
@@ -496,7 +482,7 @@ sudo -u "$AGENT_USER" bash -c "
 info "hooks installed."
 
 # ============================================================
-# 9. Install Discord Channels plugin
+# 8. Install Discord Channels plugin
 # ============================================================
 info "Installing Discord Channels plugin..."
 
@@ -524,7 +510,7 @@ sudo -u "$AGENT_USER" bash -c "
 info "Discord plugin installed."
 
 # ============================================================
-# 10. Write CLAUDE.md (repo root, points to vault AGENTS.md)
+# 9. Write CLAUDE.md (repo root, points to vault AGENTS.md)
 # ============================================================
 info "Writing CLAUDE.md..."
 
@@ -542,7 +528,7 @@ sed -i "s|\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/CLAUDE.md"
 chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
 
 # ============================================================
-# 11. tmux startup script
+# 10. tmux startup script
 # ============================================================
 info "Writing tmux startup script..."
 
@@ -603,7 +589,7 @@ if ! command -v tmux &>/dev/null; then
 fi
 
 # ============================================================
-# 12. AppArmor profile for bubblewrap (Ubuntu 24.04+)
+# 11. AppArmor profile for bubblewrap (Ubuntu 24.04+)
 # ============================================================
 info "Configuring AppArmor profile for bubblewrap..."
 # Ubuntu 24.04 restricts unprivileged user namespaces by default.
@@ -624,15 +610,13 @@ else
 fi
 
 # ============================================================
-# 13. Firewall
+# 12. Firewall
 # ============================================================
 info "Configuring firewall..."
 if command -v ufw &>/dev/null; then
   ufw allow OpenSSH
   ufw --force enable
-  ufw deny 8384
-  ufw allow 22000
-  info "UFW configured. Port 8384 (Syncthing UI) is blocked externally."
+  info "UFW configured. rclone R2 uses outbound HTTPS only — no inbound ports needed."
 else
   warning "ufw not found, skipping firewall setup."
 fi
@@ -658,8 +642,8 @@ echo "     tmux attach -t assistant"
 echo "     /discord:access pair <code>"
 echo "     /discord:access policy allowlist"
 echo ""
-echo "  4. Verify vault is synced:"
-echo "     ls ~/vault/"
+echo "  4. Verify vault is mounted:"
+echo "     mountpoint ~/vault && ls ~/vault/"
 echo ""
 echo "  5. (Optional) Disable root SSH after confirming ${AGENT_USER} can login:"
 echo "     sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config"
