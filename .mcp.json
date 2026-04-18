@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["node_modules/.bin/playwright-mcp", "--headless", "--no-sandbox", "--browser", "chromium"]
+    },
+    "memory": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "./mcp-servers/memory/index.ts"],
+      "env": {
+        "MEMORY_FILE_PATH": "../vault/00-Laura-Persona/memory.json"
+      }
+    }
+  }
+}

@@ -19,7 +19,7 @@ set -e
 #   6.  Install Node.js + Claude Code (native)
 #   7.  Install Bun (required for Channels plugins)
 #   8.  Configure Claude Code auth (OAuth Token)
-#   8.2 Configure MCP: memory server
+#   8.2 Install MCP server dependencies (.mcp.json is in repo)
 #   8.5 Configure Claude Code Hooks
 #   9.  Install Discord Channels plugin
 #   10. Write CLAUDE.md pointing to Persona in vault
@@ -112,7 +112,7 @@ fi
 # ============================================================
 info "Checking Docker..."
 apt-get update -qq && apt-get upgrade -y -qq
-apt-get install -y -qq unzip jq
+apt-get install -y -qq unzip jq bubblewrap socat uidmap
 
 if command -v docker &>/dev/null; then
   warning "Docker already installed, skipping."
@@ -265,6 +265,13 @@ sudo -u "$AGENT_USER" bash -c "
     echo \"    Installing Claude Code ${CLAUDE_CODE_VERSION} (was: \${INSTALLED:-none})...\"
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
   fi
+
+  # Fix missing execute bit on seccomp helper (required for sandbox to work)
+  SECCOMP_BIN=\"\$(npm root -g)/@anthropic-ai/claude-code/vendor/seccomp/x64/apply-seccomp\"
+  if [ -f \"\$SECCOMP_BIN\" ]; then
+    chmod +x \"\$SECCOMP_BIN\"
+    echo '    Fixed apply-seccomp execute bit.'
+  fi
 "
 
 # Verify Claude Code version meets minimum requirement
@@ -331,25 +338,58 @@ CLAUDEJSON
 "
 
 # ============================================================
-# 8.2 Configure MCP: memory server
+# 8.2 Install MCP server dependencies
 # ============================================================
-info "Configuring Claude Code mcps..."
+info "Installing MCP server dependencies..."
 
 sudo -u "$AGENT_USER" bash -c "
   export BUN_INSTALL=\"\$HOME/.bun\"
   export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
-  export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"
 
   cd ${AGENT_WORKDIR}/mcp-servers/memory && bun install --frozen-lockfile
   echo '    Memory server deps installed.'
-  claude mcp add memory bun \
-    -e MEMORY_FILE_PATH=${PERSONA_LOCAL}/memory.json \
-    -- run ${AGENT_WORKDIR}/mcp-servers/memory/index.ts
 "
 
-info "mcps installed."
+info "MCP deps installed. Config is in .mcp.json (checked into repo)."
+
+# ============================================================
+# 8.3 Install Playwright + Chromium (for fetch-external MCP)
+# ============================================================
+info "Installing Playwright MCP + Chromium..."
+
+# Install @playwright/mcp locally so .mcp.json can reference node_modules/.bin/playwright-mcp
+sudo -u "$AGENT_USER" bash -c "
+  export NVM_DIR=\"\$HOME/.nvm\"
+  source \"\$NVM_DIR/nvm.sh\"
+  cd ${AGENT_WORKDIR}
+  if [ -d 'node_modules/@playwright/mcp' ]; then
+    echo '    @playwright/mcp already installed, skipping.'
+  else
+    npm install @playwright/mcp
+    echo '    @playwright/mcp installed.'
+  fi
+"
+
+# Install Chromium system dependencies (requires root)
+AGENT_NODE=$(sudo -u "$AGENT_USER" bash -c 'export NVM_DIR="$HOME/.nvm"; source "$NVM_DIR/nvm.sh"; which node')
+PLAYWRIGHT_BIN="${AGENT_WORKDIR}/node_modules/.bin/playwright"
+if [ -f "$PLAYWRIGHT_BIN" ]; then
+  "$AGENT_NODE" "$PLAYWRIGHT_BIN" install-deps chromium
+  info "Chromium system deps installed."
+else
+  warning "playwright binary not found at ${PLAYWRIGHT_BIN}, skipping install-deps."
+fi
+
+# Download Chromium browser binary (as agent user, stored in ~/.cache/ms-playwright/)
+sudo -u "$AGENT_USER" bash -c "
+  export NVM_DIR=\"\$HOME/.nvm\"
+  source \"\$NVM_DIR/nvm.sh\"
+  cd ${AGENT_WORKDIR}
+  node node_modules/.bin/playwright install chromium
+  echo '    Chromium browser binary downloaded.'
+"
+
+info "Playwright + Chromium ready."
 
 # ============================================================
 # 8.5 Configure Claude Code Hooks
@@ -509,7 +549,28 @@ if ! command -v tmux &>/dev/null; then
 fi
 
 # ============================================================
-# 12. Firewall
+# 12. AppArmor profile for bubblewrap (Ubuntu 24.04+)
+# ============================================================
+info "Configuring AppArmor profile for bubblewrap..."
+# Ubuntu 24.04 restricts unprivileged user namespaces by default.
+# bwrap requires a profile granting 'userns' permission to function.
+if sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null | grep -q "1"; then
+  cat > /etc/apparmor.d/bwrap <<'AAPROFILE'
+abi <abi/4.0>,
+include <tunables/global>
+
+/usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
+AAPROFILE
+  apparmor_parser -r /etc/apparmor.d/bwrap
+  info "AppArmor profile for bwrap loaded."
+else
+  info "AppArmor userns restriction not active, skipping."
+fi
+
+# ============================================================
+# 13. Firewall
 # ============================================================
 info "Configuring firewall..."
 if command -v ufw &>/dev/null; then
