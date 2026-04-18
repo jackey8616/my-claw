@@ -1,6 +1,6 @@
 # Vault Sync 重構規格：Syncthing + iCloud → Cloudflare R2
 
-**Status**: Draft — 待 Clode review  
+**Status**: Done  
 **Created**: 2026-04-17  
 **Author**: Laura
 
@@ -117,9 +117,16 @@ VPS（rclone mount）      iPhone Obsidian
 
 ---
 
-## 八、待決策
+## 八、已確認決策
 
-- [ ] E2E 加密密碼要存哪？（密碼管理器？.env？）
-- [ ] rclone `--vfs-cache-mode` 選哪個？（`full` 最安全但耗磁碟）
-- [ ] Mac 的 iCloud vault 要保留多久再切換？（建議至少觀察一週）
-- [ ] R2 bucket 要開 versioning 嗎？（目前 R2 不支援 S3 versioning，但可考慮 Cloudflare 的 Object Versioning）
+- [x] E2E 加密密碼 → `.env` 存放（`R2_E2E_PASSWORD`）
+- [x] rclone `--vfs-cache-mode` → `full`
+- [x] iCloud vault → 穩定後廢棄，時間點另行決定
+- [x] R2 Object Versioning → 遷移穩定後再評估是否啟用
+
+## 九、iPhone 遷移注意事項
+
+iPhone 目前使用原生 iCloud sync（非 Obsidian Sync）。遷移後：
+- 在 Obsidian 建立**新的 local vault**（非 iCloud 路徑）
+- 安裝 Remotely Save → 設定 R2 → 從 R2 初次 sync 拉下 vault
+- 舊的 iCloud vault 自然閒置，穩定後再刪除
