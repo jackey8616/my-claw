@@ -112,7 +112,7 @@ fi
 # ============================================================
 info "Checking Docker..."
 apt-get update -qq && apt-get upgrade -y -qq
-apt-get install -y -qq unzip jq bubblewrap socat uidmap
+apt-get install -y -qq unzip jq bubblewrap socat uidmap gnupg
 
 if command -v docker &>/dev/null; then
   warning "Docker already installed, skipping."
@@ -390,6 +390,60 @@ sudo -u "$AGENT_USER" bash -c "
 "
 
 info "Playwright + Chromium ready."
+
+# ============================================================
+# 8.4 GitHub integration (optional: GH_TOKEN + GPG signing)
+# ============================================================
+info "GitHub integration (optional)..."
+
+GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
+
+read -p "Set up GitHub integration (GH_TOKEN + GPG signing)? (y/N): " setup_github
+if [[ "$setup_github" =~ ^[Yy]$ ]]; then
+  GH_TOKEN=$(load_env "GH_TOKEN" "GitHub Personal Access Token (repo + write:gpg_key scope)")
+
+  # Resolve GitHub account primary email
+  GPG_EMAIL=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+    https://api.github.com/user/emails | \
+    jq -r '[.[] | select(.primary == true and .verified == true)] | .[0].email')
+  if [[ -z "$GPG_EMAIL" || "$GPG_EMAIL" == "null" ]]; then
+    error "Could not resolve a verified primary email from GitHub. Check GH_TOKEN scope (needs user:email or read:user)."
+  fi
+  info "Using GitHub email for GPG key: ${GPG_EMAIL}"
+
+  sudo -u "$AGENT_USER" bash -c "
+    GPG_KEY_PATH='${GPG_KEY_PATH}'
+    GPG_EMAIL='${GPG_EMAIL}'
+
+    if [ -f \"\$GPG_KEY_PATH\" ]; then
+      echo '    Importing existing Laura bot GPG key from vault...'
+      gpg --batch --import \"\$GPG_KEY_PATH\"
+    else
+      echo '    Generating new Laura bot GPG key...'
+      gpg --batch --gen-key <<GPGBATCH
+%no-protection
+Key-Type: EdDSA
+Key-Curve: ed25519
+Name-Real: Laura
+Name-Email: ${GPG_EMAIL}
+Expire-Date: 0
+GPGBATCH
+      KEY_ID=\$(gpg --list-secret-keys --keyid-format LONG \"\$GPG_EMAIL\" 2>/dev/null | grep '^sec' | awk '{print \$2}' | cut -d'/' -f2 | head -1)
+      gpg --armor --export-secret-keys \"\$KEY_ID\" > \"\$GPG_KEY_PATH\"
+      echo \"    Key exported to vault: \$GPG_KEY_PATH\"
+    fi
+
+    KEY_ID=\$(gpg --list-secret-keys --keyid-format LONG \"\$GPG_EMAIL\" 2>/dev/null | grep '^sec' | awk '{print \$2}' | cut -d'/' -f2 | head -1)
+    git config --global user.signingkey \"\$KEY_ID\"
+    git config --global commit.gpgsign true
+    git config --global gpg.program gpg
+    echo \"    Git signing configured with key: \$KEY_ID\"
+  "
+
+  info "GitHub integration enabled."
+else
+  warning "Skipping GitHub integration. GitHub skill will be disabled."
+fi
 
 # ============================================================
 # 8.5 Configure Claude Code Hooks
