@@ -1,8 +1,7 @@
 {
   "enabledMcpjsonServers": ["playwright"],
   "sandbox": {
-    "enabled": true,
-    "failIfUnavailable": true
+    "enabled": false
   },
   "permissions": {
     "allow": [
