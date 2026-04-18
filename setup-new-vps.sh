@@ -214,7 +214,7 @@ fi
 # Verify vault has AGENTS.md
 if [ ! -f "${PERSONA_LOCAL}/AGENTS.md" ]; then
   warning "AGENTS.md not found (${PERSONA_LOCAL}/AGENTS.md)."
-  warning "Make sure Mac has synced vault to R2 before this step."
+  warning "Make sure vault has been synced to R2 before this step (via Remotely Save on any device, or rclone copy from another machine)."
   pause "Press Enter to continue anyway..."
 fi
 

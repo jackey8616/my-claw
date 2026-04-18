@@ -1,6 +1,6 @@
 # Vault Sync 重構規格：Syncthing + iCloud → Cloudflare R2
 
-**Status**: Approved — 實作中  
+**Status**: Done  
 **Created**: 2026-04-17  
 **Author**: Laura
 
