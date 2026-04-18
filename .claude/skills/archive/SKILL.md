@@ -156,11 +156,12 @@ DailyNote 路徑：`/home/laura/vault/02-Daily-Notes/{MONTH}/{DATE}.md`
 }
 ```
 
-整理完成後，透過 Bash 呼叫 memory-agent-invoke Skill 寫入：
+整理完成後，透過 Bash 呼叫 memory-agent 寫入：
 
 ```bash
 claude --agent memory-agent \
   --allowedTools "mcp__memory__create_entities,mcp__memory__create_relations,mcp__memory__add_observations,mcp__memory__delete_entities,mcp__memory__delete_observations,mcp__memory__compact_graph" \
+  --dangerously-skip-permissions \
   -p '<上面的 JSON>'
 ```
 
@@ -182,9 +183,11 @@ claude --agent memory-agent \
 所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後用 `kill -TERM` 終止當前 process（Discord 連線模式下 `/exit` 無法正確退出）：
 
 ```bash
-CLAUDE_PID=$(pgrep -u laura -x claude | head -1) && (while kill -0 $CLAUDE_PID 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> /tmp/session-archiver-debug.log 2>&1 &
+LOG_DIR="${TMPDIR:-/tmp}/claude-archiver"
+mkdir -p "$LOG_DIR"
+(while kill -0 "$PPID" 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> "$LOG_DIR/session-archiver-debug.log" 2>&1 &
 disown
-kill -TERM $CLAUDE_PID
+kill -TERM "$PPID"
 ```
 
-背景 process 等 Claude process 真正消失（SIGTERM 後）才送啟動命令。
+`$PPID` 在 Bash tool 的 subprocess 中 = 當前 claude process。背景 loop 等 claude 真正退出後才送啟動命令。
