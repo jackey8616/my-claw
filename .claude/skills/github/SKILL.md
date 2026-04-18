@@ -6,6 +6,23 @@ argument-hint: commit|pr|merge <PR#>|upstream-pr <owner/repo>
 allowed-tools: Bash Read
 ---
 
+## 前置檢查
+
+執行任何操作前，先確認 GitHub 整合已設定：
+
+```bash
+source /home/laura/my-claw/.env
+if [ -z "$GH_TOKEN" ]; then
+  echo "❌ GitHub 整合未啟用：GH_TOKEN 不存在於 .env"
+  echo "請重新執行 setup-new-vps.sh 並選擇啟用 GitHub integration。"
+  exit 1
+fi
+```
+
+若 GH_TOKEN 不存在，立即停止，告知使用者 GitHub skill 未啟用，不繼續執行任何操作。
+
+---
+
 ## 環境準備
 
 執行前先載入 token：
