@@ -17,6 +17,7 @@ set -e
 #   4.  Install rclone + configure Cloudflare R2 + systemd vault mount
 #   5.  Install Node.js + Claude Code (native)
 #   6.  Install Bun (required for Channels plugins)
+#   6.5 Install jj (Jujutsu VCS, colocated with git)
 #   7.  Configure Claude Code auth (OAuth Token)
 #   7.2 Install MCP server dependencies (.mcp.json is in repo)
 #   7.5 Configure Claude Code Hooks
@@ -294,6 +295,59 @@ sudo -u "$AGENT_USER" bash -c '
     echo "export PATH=\"\$BUN_INSTALL/bin:\$PATH\"" >> $HOME/.bashrc
   fi
 '
+
+# ============================================================
+# 6.5 Install jj (Jujutsu VCS)
+# ============================================================
+info "Installing jj (Jujutsu VCS)..."
+
+sudo -u "$AGENT_USER" bash -c '
+  if [ -f "$HOME/.local/bin/jj" ]; then
+    echo "    jj already installed ($($HOME/.local/bin/jj --version)), skipping."
+  else
+    JJ_VERSION=$(curl -s https://api.github.com/repos/jj-vcs/jj/releases/latest \
+      | grep -o "\"tag_name\": \"v[^\"]*\"" | cut -d"\"" -f4)
+    JJ_VERSION=${JJ_VERSION:-v0.40.0}
+    mkdir -p $HOME/.local/bin
+    curl -sL "https://github.com/jj-vcs/jj/releases/download/${JJ_VERSION}/jj-${JJ_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+      | tar -xz --no-same-permissions -C /tmp ./jj
+    mv /tmp/jj $HOME/.local/bin/jj
+    echo "    jj ${JJ_VERSION} installed."
+  fi
+
+  if ! grep -q ".local/bin" $HOME/.bashrc 2>/dev/null; then
+    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> $HOME/.bashrc
+  fi
+'
+
+# Configure jj identity and initialize colocated repo
+sudo -u "$AGENT_USER" bash -c "
+  export PATH=\"\$HOME/.local/bin:\$PATH\"
+
+  # Mirror git global identity into jj config
+  GIT_NAME=\$(git config --global user.name 2>/dev/null || echo 'Laura')
+  GIT_EMAIL=\$(git config --global user.email 2>/dev/null || echo 'laura@my-claw')
+  jj config set --user user.name \"\$GIT_NAME\" 2>/dev/null || true
+  jj config set --user user.email \"\$GIT_EMAIL\" 2>/dev/null || true
+
+  cd ${AGENT_WORKDIR}
+
+  if [ -d '.jj' ]; then
+    echo '    jj colocated repo already initialized, skipping.'
+  else
+    jj git init --colocate 2>&1 | grep -v '^Hint:'
+    jj bookmark track main --remote=origin 2>/dev/null || true
+    echo '    jj colocated repo initialized.'
+  fi
+
+  # Protect .jj from git clean -xdf
+  if ! grep -q '\.jj' .gitignore 2>/dev/null; then
+    echo '.jj' >> .gitignore
+    echo '    Added .jj to .gitignore.'
+  fi
+"
+
+info "jj ready."
 
 # ============================================================
 # 7. Configure Claude Code auth (OAuth Token)
