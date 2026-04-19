@@ -20,9 +20,8 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] daily-summary started"
 
-# Default to silent mode when no explicit argument is given
 if [ -z "${1:-}" ]; then
-  PROMPT="/daily-summary silent"
+  PROMPT="/daily-summary"
 else
   PROMPT="/daily-summary $1"
 fi

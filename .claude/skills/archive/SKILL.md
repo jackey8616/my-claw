@@ -5,6 +5,10 @@ disable-model-invocation: false
 allowed-tools: Read Write Bash mcp__plugin_discord_discord__reply
 ---
 
+## 當前時間資訊
+
+!`TZ=UTC date '+NOW_DATE=%Y-%m-%d NOW_MONTH=%Y-%m NOW_TIME=%H:%M'`
+
 ## 日期判定規則
 
 查看對話歷史中**第一則**帶有 `ts="..."` 屬性的 `<channel>` 標籤，取出其 UTC 日期（YYYY-MM-DD），記為 SESSION_START_DATE。
@@ -17,14 +21,6 @@ allowed-tools: Read Write Bash mcp__plugin_discord_discord__reply
 ## 執行步驟
 
 依序完成以下所有步驟，不要省略任何一步。
-
-### 步驟 0：取得當前時間
-
-使用 Bash 工具執行以下指令，取得 NOW_DATE、NOW_MONTH、NOW_TIME：
-
-```bash
-TZ=UTC date '+NOW_DATE=%Y-%m-%d NOW_MONTH=%Y-%m NOW_TIME=%H:%M'
-```
 
 ### 步驟 1：產出 SessionLog 內容
 
@@ -156,12 +152,11 @@ DailyNote 路徑：`/home/laura/vault/02-Daily-Notes/{MONTH}/{DATE}.md`
 }
 ```
 
-整理完成後，透過 Bash 呼叫 memory-agent 寫入：
+整理完成後，透過 Bash 呼叫 memory-agent-invoke Skill 寫入：
 
 ```bash
 claude --agent memory-agent \
   --allowedTools "mcp__memory__create_entities,mcp__memory__create_relations,mcp__memory__add_observations,mcp__memory__delete_entities,mcp__memory__delete_observations,mcp__memory__compact_graph" \
-  --dangerously-skip-permissions \
   -p '<上面的 JSON>'
 ```
 
@@ -169,9 +164,7 @@ claude --agent memory-agent \
 
 ### 步驟 5：通知 Discord
 
-若 `$ARGUMENTS` 為 `silent`，跳過此步驟。
-
-否則使用 `mcp__plugin_discord_discord__reply` 發送至頻道 `1486128557444042883`：
+使用 `mcp__plugin_discord_discord__reply` 發送至頻道 `1486128557444042883`：
 
 ```
 📝 Session archived: **{title}**
@@ -183,11 +176,9 @@ claude --agent memory-agent \
 所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後用 `kill -TERM` 終止當前 process（Discord 連線模式下 `/exit` 無法正確退出）：
 
 ```bash
-LOG_DIR="${TMPDIR:-/tmp}/claude-archiver"
-mkdir -p "$LOG_DIR"
-(while kill -0 "$PPID" 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> "$LOG_DIR/session-archiver-debug.log" 2>&1 &
+CLAUDE_PID=$(pgrep -u laura -x claude | head -1) && (while kill -0 $CLAUDE_PID 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> /tmp/session-archiver-debug.log 2>&1 &
 disown
-kill -TERM "$PPID"
+kill -TERM $CLAUDE_PID
 ```
 
-`$PPID` 在 Bash tool 的 subprocess 中 = 當前 claude process。背景 loop 等 claude 真正退出後才送啟動命令。
+背景 process 等 Claude process 真正消失（SIGTERM 後）才送啟動命令。

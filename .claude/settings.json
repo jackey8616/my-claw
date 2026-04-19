@@ -4,10 +4,17 @@
     "enabled": false
   },
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "mcp__memory__open_nodes",
       "mcp__memory__search_nodes",
-      "mcp__memory__read_graph"
+      "mcp__memory__read_graph",
+      "mcp__plugin_discord_discord__reply",
+      "mcp__plugin_discord_discord__fetch_messages",
+      "mcp__plugin_discord_discord__react",
+      "mcp__plugin_discord_discord__edit_message",
+      "mcp__plugin_discord_discord__download_attachment",
+      "Bash(crontab -l)"
     ],
     "deny": []
   }
