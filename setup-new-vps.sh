@@ -108,7 +108,6 @@ R2_ACCOUNT_ID=$(load_env "R2_ACCOUNT_ID" "Cloudflare Account ID (from R2 dashboa
 R2_ACCESS_KEY_ID=$(load_env "R2_ACCESS_KEY_ID" "R2 API Token Access Key ID (vps-rclone token)")
 R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Access Key (vps-rclone token)")
 R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name (e.g. laura-vault)")
-R2_E2E_PASSWORD=$(load_env "R2_E2E_PASSWORD" "Remotely Save E2E encryption password (shared with Mac/iPhone)")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 CLAUDE_CODE_OAUTH_TOKEN=$(load_env "CLAUDE_CODE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
@@ -458,18 +457,21 @@ info "Playwright + Chromium ready."
 # ============================================================
 # 7.4 GitHub integration (optional: GH_TOKEN + GPG signing)
 # ============================================================
-info "GitHub integration (optional)..."
+info "GitHub integration (auto-detect from GH_TOKEN + vault GPG key)..."
 
 GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
 
-# Non-interactive: set SETUP_GITHUB=y to enable; default skip
-if $NON_INTERACTIVE; then
-  setup_github="${SETUP_GITHUB:-n}"
+# Auto-detect: GH_TOKEN + vault GPG key present → enable; neither → skip; token without key → fatal
+if [[ -n "${GH_TOKEN:-}" && -f "${GPG_KEY_PATH}" ]]; then
+  setup_github="y"
+elif [[ -z "${GH_TOKEN:-}" ]]; then
+  setup_github="n"
+  warning "GitHub integration disabled (GH_TOKEN not set)."
 else
-  read -p "Set up GitHub integration (GH_TOKEN + GPG signing)? (y/N): " setup_github
+  error "GH_TOKEN is set but GPG key not found at ${GPG_KEY_PATH}. Ensure vault is mounted and key exists."
 fi
-if [[ "$setup_github" =~ ^[Yy]$ ]]; then
-  GH_TOKEN=$(load_env "GH_TOKEN" "GitHub Personal Access Token (repo + write:gpg_key scope)")
+
+if [[ "$setup_github" == "y" ]]; then
 
   # Resolve GitHub account primary email
   GPG_EMAIL=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
