@@ -473,18 +473,18 @@ info "Playwright + Chromium ready."
 # ============================================================
 # 7.4 GitHub integration (optional: GH_TOKEN + GPG signing)
 # ============================================================
-info "GitHub integration (auto-detect from GH_TOKEN + vault GPG key)..."
+info "GitHub integration (auto-detect from GH_TOKEN)..."
 
 GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
 
-# Auto-detect: GH_TOKEN + vault GPG key present → enable; neither → skip; token without key → fatal
-if [[ -n "${GH_TOKEN:-}" && -f "${GPG_KEY_PATH}" ]]; then
+# GH_TOKEN present → enable (GPG key will be imported from vault if it exists,
+# or generated fresh and saved to vault on first deploy).
+# GH_TOKEN absent → skip entirely.
+if [[ -n "${GH_TOKEN:-}" ]]; then
   setup_github="y"
-elif [[ -z "${GH_TOKEN:-}" ]]; then
+else
   setup_github="n"
   warning "GitHub integration disabled (GH_TOKEN not set)."
-else
-  error "GH_TOKEN is set but GPG key not found at ${GPG_KEY_PATH}. Ensure vault is mounted and key exists."
 fi
 
 if [[ "$setup_github" == "y" ]]; then
@@ -516,6 +516,7 @@ Name-Email: ${GPG_EMAIL}
 Expire-Date: 0
 GPGBATCH
       KEY_ID=\$(gpg --list-secret-keys --keyid-format LONG \"\$GPG_EMAIL\" 2>/dev/null | grep '^sec' | awk '{print \$2}' | cut -d'/' -f2 | head -1)
+      mkdir -p \"\$(dirname \"\$GPG_KEY_PATH\")\"
       gpg --armor --export-secret-keys \"\$KEY_ID\" > \"\$GPG_KEY_PATH\"
       echo \"    Key exported to vault: \$GPG_KEY_PATH\"
     fi
