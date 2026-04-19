@@ -458,18 +458,27 @@ info "Playwright + Chromium ready."
 # ============================================================
 # 7.4 GitHub integration (optional: GH_TOKEN + GPG signing)
 # ============================================================
-info "GitHub integration (optional)..."
+info "GitHub integration (auto-detect from GH_TOKEN + GPG_KEY_PATH)..."
 
-GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
+GPG_KEY_PATH="${GPG_KEY_PATH:-${PERSONA_LOCAL}/laura-bot.gpg.asc}"
 
-# Non-interactive: set SETUP_GITHUB=y to enable; default skip
-if $NON_INTERACTIVE; then
-  setup_github="${SETUP_GITHUB:-n}"
+# Auto-detect: both present → enable; neither → skip; one missing → fatal
+_has_token=false; _has_gpg=false
+[[ -n "${GH_TOKEN:-}" ]] && _has_token=true
+[[ -n "${GPG_KEY_PATH:-}" && -f "${GPG_KEY_PATH}" ]] && _has_gpg=true
+
+if $_has_token && $_has_gpg; then
+  setup_github="y"
+elif ! $_has_token && ! $_has_gpg; then
+  setup_github="n"
+  warning "GitHub integration disabled (GH_TOKEN and GPG_KEY_PATH not set)."
+elif ! $_has_token; then
+  error "GPG_KEY_PATH is set but GH_TOKEN is missing. Set both or neither."
 else
-  read -p "Set up GitHub integration (GH_TOKEN + GPG signing)? (y/N): " setup_github
+  error "GH_TOKEN is set but GPG_KEY_PATH is missing or file not found. Set both or neither."
 fi
-if [[ "$setup_github" =~ ^[Yy]$ ]]; then
-  GH_TOKEN=$(load_env "GH_TOKEN" "GitHub Personal Access Token (repo + write:gpg_key scope)")
+
+if [[ "$setup_github" == "y" ]]; then
 
   # Resolve GitHub account primary email
   GPG_EMAIL=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
