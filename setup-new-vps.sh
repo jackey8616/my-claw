@@ -69,44 +69,40 @@ update_env() {
   fi
 }
 
-# require_env: .env file (if present) → env var fallback → error
-require_env() {
-  local var_name=$1
-  local val
-  if [ -f .env ]; then
-    val=$(grep "^${var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
-  fi
-  [[ -z "$val" ]] && val="${!var_name}"
-  [[ -z "$val" ]] && error "Required variable missing: ${var_name} (set in .env or as env var)"
-  echo "$val"
-}
-
+# load_env: .env -> env var -> prompt (interactive) or error (non-interactive)
+#
+# Priority:
+#   1. Value already in .env file
+#   2. Environment variable with the same name
+#   3. Interactive: ask the user (then save to .env)
+#      Non-interactive: fatal error
 load_env() {
   local env_var_name=$1
   local prompt_text=${2:-$1}
+  local val
 
-  if $NON_INTERACTIVE; then
-    require_env "$env_var_name"
+  # 1. Read from .env
+  val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
+
+  # 2. Fall back to environment variable
+  [[ -z "$val" ]] && val="${!env_var_name}"
+
+  if [[ -n "$val" ]]; then
+    # Already resolved - save/update .env so it is recorded, then return
+    update_env "$env_var_name" "$val"
+    echo "$val"
     return
   fi
 
-  local current_val
-  current_val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
-
-  if [[ -n "$current_val" ]]; then
-    read -p "${env_var_name} already exists (${current_val:0:20}...), overwrite? (y/N): " overwrite
-    if [[ "$overwrite" =~ ^[Yy]$ ]]; then
-      read -p "New ${prompt_text}: " new_val
-      update_env "$env_var_name" "$new_val"
-      echo "$new_val"
-    else
-      echo "$current_val"
-    fi
-  else
-    read -p "Enter ${prompt_text}: " new_val
-    update_env "$env_var_name" "$new_val"
-    echo "$new_val"
+  # 3. Nothing found
+  if $NON_INTERACTIVE; then
+    error "Required variable missing: ${env_var_name} (set in .env or as env var)"
   fi
+
+  # Interactive: prompt the user
+  read -p "Enter ${prompt_text}: " val
+  update_env "$env_var_name" "$val"
+  echo "$val"
 }
 
 # ============================================================
