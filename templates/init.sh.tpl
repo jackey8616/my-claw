@@ -24,8 +24,9 @@ export SETUP_GITHUB="${setup_github}"
 
 # ── Clone repo ──
 apt-get install -y -qq git
-git clone "${repo_url}" /root/openclaw
-cd /root/openclaw
+REPO_NAME=$(basename "${repo_url}" .git)
+git clone "${repo_url}" /root/"$REPO_NAME"
+cd /root/"$REPO_NAME"
 
 # ── Run setup in non-interactive mode ──
 bash setup-new-vps.sh --non-interactive
