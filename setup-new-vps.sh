@@ -108,7 +108,6 @@ R2_ACCOUNT_ID=$(load_env "R2_ACCOUNT_ID" "Cloudflare Account ID (from R2 dashboa
 R2_ACCESS_KEY_ID=$(load_env "R2_ACCESS_KEY_ID" "R2 API Token Access Key ID (vps-rclone token)")
 R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Access Key (vps-rclone token)")
 R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name (e.g. laura-vault)")
-R2_E2E_PASSWORD=$(load_env "R2_E2E_PASSWORD" "Remotely Save E2E encryption password (shared with Mac/iPhone)")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 CLAUDE_CODE_OAUTH_TOKEN=$(load_env "CLAUDE_CODE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
