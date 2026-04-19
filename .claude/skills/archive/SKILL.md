@@ -182,10 +182,17 @@ claude --agent memory-agent \
 
 所有步驟完成後執行以下指令。先在背景等待 Claude process 退出後再送啟動命令，然後用 `kill -TERM` 終止當前 process（Discord 連線模式下 `/exit` 無法正確退出）：
 
+若 `$ARGUMENTS` 非空且非 `silent`，以 `$ARGUMENTS` 作為下一個 session 的 startup prompt；否則使用預設問候。
+
 ```bash
 LOG_DIR="${TMPDIR:-/tmp}/claude-archiver"
 mkdir -p "$LOG_DIR"
-(while kill -0 "$PPID" 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter) >> "$LOG_DIR/session-archiver-debug.log" 2>&1 &
+if [ -n "$ARGUMENTS" ] && [ "$ARGUMENTS" != "silent" ]; then
+  NEXT_PROMPT="$ARGUMENTS. Reply via Discord channel 1486128557444042883."
+else
+  NEXT_PROMPT="Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883."
+fi
+(while kill -0 "$PPID" 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"$NEXT_PROMPT\"" Enter) >> "$LOG_DIR/session-archiver-debug.log" 2>&1 &
 disown
 kill -TERM "$PPID"
 ```
