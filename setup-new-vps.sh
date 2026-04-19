@@ -12,6 +12,18 @@ for arg in "$@"; do
 done
 
 # ============================================================
+# Prevent ALL apt/dpkg interactive prompts.
+# For conffile conflicts (e.g. openssh-server), keep the
+# locally installed version (--force-confold).
+# ============================================================
+export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
+APT_OPTS=(
+  -o Dpkg::Options::="--force-confdef"
+  -o Dpkg::Options::="--force-confold"
+)
+
+# ============================================================
 # setup-vps.sh
 # Deploy personal Claude Code assistant on a fresh VPS
 # Run as root on a fresh Ubuntu 22.04/24.04
@@ -137,14 +149,15 @@ fi
 # 2. Install Docker
 # ============================================================
 info "Checking Docker..."
-apt-get update -qq && apt-get upgrade -y -qq
-apt-get install -y -qq unzip jq bubblewrap socat uidmap gnupg
+apt-get "${APT_OPTS[@]}" update -qq && apt-get "${APT_OPTS[@]}" upgrade -y -qq
+apt-get "${APT_OPTS[@]}" install -y -qq unzip jq bubblewrap socat uidmap gnupg
 
 if command -v docker &>/dev/null; then
   warning "Docker already installed, skipping."
 else
   info "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
+  # Pass DEBIAN_FRONTEND so the Docker install script also stays non-interactive
+  curl -fsSL https://get.docker.com | DEBIAN_FRONTEND=noninteractive sh
 fi
 
 usermod -aG docker "$AGENT_USER"
@@ -193,7 +206,7 @@ sudo -u "$AGENT_USER" bash -c "
 
 info "Creating vault directory and setting up systemd mount service..."
 mkdir -p "$VAULT_LOCAL"
-apt-get install -y -qq fuse3
+apt-get "${APT_OPTS[@]}" install -y -qq fuse3
 chown -R "${AGENT_USER}:${AGENT_USER}" "$VAULT_LOCAL"
 
 RCLONE_BIN=$(which rclone)
@@ -224,16 +237,19 @@ SYSTEMD
 
 systemctl daemon-reload
 systemctl enable vault-mount.service
-systemctl start vault-mount.service
+# Start in background; don't block script if network not fully ready yet
+systemctl start vault-mount.service || warning "vault-mount.service start returned non-zero; it will retry automatically."
 
-info "Waiting for vault mount to settle..."
-sleep 5
-
-if mountpoint -q "$VAULT_LOCAL"; then
-  info "Vault mounted successfully at ${VAULT_LOCAL}."
-else
-  warning "Vault mount may not be ready yet. Check: systemctl status vault-mount.service"
-fi
+info "Waiting for vault mount to settle (up to 30s)..."
+for i in $(seq 1 6); do
+  sleep 5
+  if mountpoint -q "$VAULT_LOCAL"; then
+    info "Vault mounted successfully at ${VAULT_LOCAL}."
+    break
+  fi
+  echo "    ...waiting (${i}/6)"
+done
+mountpoint -q "$VAULT_LOCAL" || warning "Vault not yet mounted. Check: systemctl status vault-mount.service"
 
 # Verify vault has AGENTS.md
 if [ ! -f "${PERSONA_LOCAL}/AGENTS.md" ]; then
@@ -437,7 +453,7 @@ sudo -u "$AGENT_USER" bash -c "
 AGENT_NODE=$(sudo -u "$AGENT_USER" bash -c 'export NVM_DIR="$HOME/.nvm"; source "$NVM_DIR/nvm.sh"; which node')
 PLAYWRIGHT_BIN="${AGENT_WORKDIR}/node_modules/.bin/playwright"
 if [ -f "$PLAYWRIGHT_BIN" ]; then
-  "$AGENT_NODE" "$PLAYWRIGHT_BIN" install-deps chromium
+  DEBIAN_FRONTEND=noninteractive "$AGENT_NODE" "$PLAYWRIGHT_BIN" install-deps chromium
   info "Chromium system deps installed."
 else
   warning "playwright binary not found at ${PLAYWRIGHT_BIN}, skipping install-deps."
@@ -670,7 +686,7 @@ chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/start-agent.sh"
 # Install tmux if not present
 if ! command -v tmux &>/dev/null; then
   info "Installing tmux..."
-  apt-get install -y tmux -qq
+  apt-get "${APT_OPTS[@]}" install -y tmux -qq
 fi
 
 # ============================================================
