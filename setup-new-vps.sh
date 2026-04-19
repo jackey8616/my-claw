@@ -457,24 +457,18 @@ info "Playwright + Chromium ready."
 # ============================================================
 # 7.4 GitHub integration (optional: GH_TOKEN + GPG signing)
 # ============================================================
-info "GitHub integration (auto-detect from GH_TOKEN + GPG_KEY_PATH)..."
+info "GitHub integration (auto-detect from GH_TOKEN + vault GPG key)..."
 
-GPG_KEY_PATH="${GPG_KEY_PATH:-${PERSONA_LOCAL}/laura-bot.gpg.asc}"
+GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
 
-# Auto-detect: both present → enable; neither → skip; one missing → fatal
-_has_token=false; _has_gpg=false
-[[ -n "${GH_TOKEN:-}" ]] && _has_token=true
-[[ -n "${GPG_KEY_PATH:-}" && -f "${GPG_KEY_PATH}" ]] && _has_gpg=true
-
-if $_has_token && $_has_gpg; then
+# Auto-detect: GH_TOKEN + vault GPG key present → enable; neither → skip; token without key → fatal
+if [[ -n "${GH_TOKEN:-}" && -f "${GPG_KEY_PATH}" ]]; then
   setup_github="y"
-elif ! $_has_token && ! $_has_gpg; then
+elif [[ -z "${GH_TOKEN:-}" ]]; then
   setup_github="n"
-  warning "GitHub integration disabled (GH_TOKEN and GPG_KEY_PATH not set)."
-elif ! $_has_token; then
-  error "GPG_KEY_PATH is set but GH_TOKEN is missing. Set both or neither."
+  warning "GitHub integration disabled (GH_TOKEN not set)."
 else
-  error "GH_TOKEN is set but GPG_KEY_PATH is missing or file not found. Set both or neither."
+  error "GH_TOKEN is set but GPG key not found at ${GPG_KEY_PATH}. Ensure vault is mounted and key exists."
 fi
 
 if [[ "$setup_github" == "y" ]]; then

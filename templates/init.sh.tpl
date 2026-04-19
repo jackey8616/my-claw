@@ -3,10 +3,9 @@
 # Rendered by Terraform templatestring() / templatefile(); do NOT run directly.
 #
 # Required Terraform variables:
-#   agent_user, gh_token (optional), r2_account_id, r2_access_key_id,
-#   r2_secret_access_key, r2_bucket_name, r2_e2e_password,
-#   discord_bot_token, claude_oauth_token, timezone, repo_url,
-#   gpg_key_path (optional; GitHub enabled only when BOTH gh_token AND gpg_key_path are set)
+#   agent_user, r2_account_id, r2_access_key_id, r2_secret_access_key,
+#   r2_bucket_name, discord_bot_token, claude_oauth_token, timezone, repo_url,
+#   gh_token (optional; GitHub enabled when set AND vault GPG key exists after mount)
 set -euo pipefail
 
 # ── Inject secrets as env vars (never written to disk as plaintext) ──
@@ -19,12 +18,9 @@ export R2_BUCKET_NAME="${r2_bucket_name}"
 export DISCORD_BOT_TOKEN="${discord_bot_token}"
 export CLAUDE_CODE_OAUTH_TOKEN="${claude_oauth_token}"
 export TIMEZONE="${timezone}"
-# GitHub auto-detected: enabled only when BOTH GH_TOKEN and GPG_KEY_PATH are set
+# GitHub auto-detected: enabled when GH_TOKEN is set AND vault GPG key exists (after vault mount)
 %{ if gh_token != "" ~}
 export GH_TOKEN="${gh_token}"
-%{ endif ~}
-%{ if gpg_key_path != "" ~}
-export GPG_KEY_PATH="${gpg_key_path}"
 %{ endif ~}
 
 # ── Clone repo ──
