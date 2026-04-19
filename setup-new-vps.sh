@@ -5,6 +5,12 @@ if [ -z "$BASH_VERSION" ]; then
 fi
 set -e
 
+# --non-interactive: read all config from env vars or .env; fail on missing required vars
+NON_INTERACTIVE=false
+for arg in "$@"; do
+  [[ "$arg" == "--non-interactive" ]] && NON_INTERACTIVE=true
+done
+
 # ============================================================
 # setup-vps.sh
 # Deploy personal Claude Code assistant on a fresh VPS
@@ -39,7 +45,7 @@ NC='\033[0m'
 info()    { echo -e "${GREEN}==>${NC} $1"; }
 warning() { echo -e "${YELLOW}Warning:${NC} $1"; }
 error()   { echo -e "${RED}Error:${NC} $1"; exit 1; }
-pause()   { read -p "$1 [Press Enter to continue]"; }
+pause()   { $NON_INTERACTIVE && return; read -p "$1 [Press Enter to continue]"; }
 
 update_env() {
   local var_name=$1
@@ -51,9 +57,26 @@ update_env() {
   fi
 }
 
+# require_env: env var → .env fallback → error
+require_env() {
+  local var_name=$1
+  local val="${!var_name}"
+  if [[ -z "$val" ]] && [ -f .env ]; then
+    val=$(grep "^${var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
+  fi
+  [[ -z "$val" ]] && error "Required variable missing: ${var_name} (set env var or add to .env)"
+  echo "$val"
+}
+
 load_env() {
   local env_var_name=$1
   local prompt_text=${2:-$1}
+
+  if $NON_INTERACTIVE; then
+    require_env "$env_var_name"
+    return
+  fi
+
   local current_val
   current_val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
 
@@ -76,7 +99,7 @@ load_env() {
 # ============================================================
 # Load config from .env
 # ============================================================
-touch .env
+$NON_INTERACTIVE || touch .env
 
 info "Loading configuration..."
 AGENT_USER=$(load_env "AGENT_USER" "dedicated user name (e.g. myagent)")
@@ -438,7 +461,12 @@ info "GitHub integration (optional)..."
 
 GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
 
-read -p "Set up GitHub integration (GH_TOKEN + GPG signing)? (y/N): " setup_github
+# Non-interactive: set SETUP_GITHUB=y to enable; default skip
+if $NON_INTERACTIVE; then
+  setup_github="${SETUP_GITHUB:-n}"
+else
+  read -p "Set up GitHub integration (GH_TOKEN + GPG signing)? (y/N): " setup_github
+fi
 if [[ "$setup_github" =~ ^[Yy]$ ]]; then
   GH_TOKEN=$(load_env "GH_TOKEN" "GitHub Personal Access Token (repo + write:gpg_key scope)")
 
