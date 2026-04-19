@@ -213,15 +213,13 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=forking
+Type=notify
 User=${AGENT_USER}
 ExecStartPre=/bin/mkdir -p ${VAULT_LOCAL}
 ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${VAULT_LOCAL} \\
   --vfs-cache-mode full \\
   --vfs-cache-max-age 24h \\
   --vfs-cache-max-size 500M \\
-  --daemon \\
-  --log-file /var/log/rclone-vault.log \\
   --log-level INFO
 ExecStop=/bin/fusermount -uz ${VAULT_LOCAL}
 Restart=on-failure
@@ -239,7 +237,7 @@ systemctl start vault-mount.service || warning "vault-mount.service start return
 info "Waiting for vault mount to settle (up to 30s)..."
 for i in $(seq 1 6); do
   sleep 5
-  if mountpoint -q "$VAULT_LOCAL"; then
+  if sudo -u "$AGENT_USER" test -d "$VAULT_LOCAL" && mountpoint -q "$VAULT_LOCAL"; then
     info "Vault mounted successfully at ${VAULT_LOCAL}."
     break
   fi
@@ -247,8 +245,8 @@ for i in $(seq 1 6); do
 done
 mountpoint -q "$VAULT_LOCAL" || warning "Vault not yet mounted. Check: systemctl status vault-mount.service"
 
-# Verify vault has AGENTS.md
-if [ ! -f "${PERSONA_LOCAL}/AGENTS.md" ]; then
+# Verify vault has AGENTS.md (check as agent user since FUSE mount is user-owned)
+if ! sudo -u "$AGENT_USER" test -f "${PERSONA_LOCAL}/AGENTS.md"; then
   warning "AGENTS.md not found (${PERSONA_LOCAL}/AGENTS.md)."
   warning "Make sure vault has been synced to R2 before this step (via Remotely Save on any device, or rclone copy from another machine)."
   pause "Press Enter to continue anyway..."
