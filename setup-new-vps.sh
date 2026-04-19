@@ -706,7 +706,7 @@ fi
 info "Installing crontab for ${AGENT_USER}..."
 sudo -u "${AGENT_USER}" bash -c '
   REPO="$HOME/my-claw"
-  (crontab -l 2>/dev/null | grep -v "daily-summary\|midnight-archive\|weekly-ingest"; echo "TZ=UTC"; echo "3 1 * * * /bin/bash $REPO/scripts/daily-summary.sh >> /tmp/daily-summary-cron.log 2>&1"; echo "50 23 * * * /bin/bash $REPO/scripts/midnight-archive.sh >> /tmp/midnight-archive.log 2>&1"; echo "0 3 * * 0 /bin/bash $REPO/scripts/weekly-ingest.sh >> /tmp/weekly-ingest-cron.log 2>&1") | crontab -
+  (crontab -l 2>/dev/null | grep -v "daily-summary\|midnight-archive\|weekly-ingest\|nz-news-digest"; echo "TZ=UTC"; echo "3 1 * * * /bin/bash $REPO/scripts/daily-summary.sh >> /tmp/daily-summary-cron.log 2>&1"; echo "50 23 * * * /bin/bash $REPO/scripts/midnight-archive.sh >> /tmp/midnight-archive.log 2>&1"; echo "0 3 * * 0 /bin/bash $REPO/scripts/weekly-ingest.sh >> /tmp/weekly-ingest-cron.log 2>&1"; echo "0 20 * * * /bin/bash $REPO/scripts/nz-news-digest.sh >> /tmp/nz-news-digest.log 2>&1") | crontab -
 '
 info "Crontab installed."
 
