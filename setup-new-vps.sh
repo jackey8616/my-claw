@@ -72,9 +72,9 @@ update_env() {
 # load_env: .env -> env var -> prompt (interactive) or error (non-interactive)
 #
 # Priority:
-#   1. Value already in .env file
-#   2. Environment variable with the same name
-#   3. Interactive: ask the user (then save to .env)
+#   1. Value already in .env file  (not rewritten)
+#   2. Environment variable        (not written to .env)
+#   3. Interactive: ask the user   (written to .env)
 #      Non-interactive: fatal error
 load_env() {
   local env_var_name=$1
@@ -88,8 +88,6 @@ load_env() {
   [[ -z "$val" ]] && val="${!env_var_name}"
 
   if [[ -n "$val" ]]; then
-    # Already resolved - save/update .env so it is recorded, then return
-    update_env "$env_var_name" "$val"
     echo "$val"
     return
   fi
