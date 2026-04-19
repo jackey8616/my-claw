@@ -10,7 +10,6 @@ set -euo pipefail
 
 # ── Inject secrets as env vars (never written to disk as plaintext) ──
 export AGENT_USER="${agent_user}"
-export GH_TOKEN="${gh_token}"
 export R2_ACCOUNT_ID="${r2_account_id}"
 export R2_ACCESS_KEY_ID="${r2_access_key_id}"
 export R2_SECRET_ACCESS_KEY="${r2_secret_access_key}"
