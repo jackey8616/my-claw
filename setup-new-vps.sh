@@ -57,14 +57,15 @@ update_env() {
   fi
 }
 
-# require_env: env var → .env fallback → error
+# require_env: .env file (if present) → env var fallback → error
 require_env() {
   local var_name=$1
-  local val="${!var_name}"
-  if [[ -z "$val" ]] && [ -f .env ]; then
+  local val
+  if [ -f .env ]; then
     val=$(grep "^${var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
   fi
-  [[ -z "$val" ]] && error "Required variable missing: ${var_name} (set env var or add to .env)"
+  [[ -z "$val" ]] && val="${!var_name}"
+  [[ -z "$val" ]] && error "Required variable missing: ${var_name} (set in .env or as env var)"
   echo "$val"
 }
 
