@@ -1,9 +1,9 @@
 ---
 name: nz-news-digest
-description: 每日擷取紐西蘭主要新聞網站 RSS，交叉比對多源報導的故事，產出精簡摘要並發佈至 Discord。
+description: 每日擷取紐西蘭主要新聞網站 RSS，交叉比對多源報導的故事，產出精簡摘要並存入 vault。
 disable-model-invocation: false
 context: fork
-allowed-tools: WebFetch Bash Write mcp__plugin_discord_discord__reply
+allowed-tools: WebFetch Bash Write
 ---
 
 ## 任務
@@ -60,47 +60,7 @@ TZ=Pacific/Auckland date '+%Y-%m'
 
 ---
 
-### 步驟 4：撰寫並發送 Discord 訊息
-
-按以下格式組合訊息，**嚴格限制在 1900 字元以內**（Discord 限制 2000 字元）：
-
-```
-📰 **NZ Daily Digest** — {NZT_DATE}
-
-🔁 **{N} cross-referenced stories**
-
-**{Story title}**
-{來源1} · {來源2}: {1 句摘要，≤110 字元}
-
-**{Story title}**
-{來源1} · {來源2} · {來源3}: {1 句摘要，≤110 字元}
-
-（最多列出 5 則交叉報導）
-
-📌 **Also notable**
-• {Title} — {Source}
-• {Title} — {Source}
-• {Title} — {Source}
-
-（最多列出 3 則值得關注的獨家新聞）
-
-*Checked: {成功取得的來源名稱，以 · 分隔}*
-```
-
-若字元超過 1900，按以下順序刪減：
-1. 先減少「Also notable」數量至 0
-2. 再減少交叉報導數量至 3
-
-若成功取得的來源少於 2 個，改發：
-```
-⚠️ NZ Daily Digest: 無法取得足夠來源資料（{N}/4 成功），今日略過。
-```
-
-組合好訊息後，使用 `mcp__plugin_discord_discord__reply` 發送至 channel `1486128557444042883`。
-
----
-
-### 步驟 5：存入 Vault
+### 步驟 4：存入 Vault
 
 將摘要以 Markdown 格式存入：
 
@@ -132,10 +92,20 @@ cross_referenced: {N}
 ...
 ```
 
+若成功取得的來源少於 2 個，寫入：
+```markdown
+---
+date: {NZT_ISO}
+sources: {N}/4
+cross_referenced: 0
+---
+
+⚠️ 無法取得足夠來源資料（{N}/4 成功），今日略過。
+```
+
 若目錄不存在先用 Bash 建立：
 ```bash
 mkdir -p /home/laura/vault/07-NZ-News/{NZT_MONTH}
 ```
 
 使用 Write 工具寫入檔案。若同日已有檔案，直接覆寫（冪等）。
-
