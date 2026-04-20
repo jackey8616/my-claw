@@ -3,7 +3,7 @@ name: nz-news-digest
 description: 每日擷取紐西蘭主要新聞網站 RSS，交叉比對多源報導的故事，產出精簡摘要並發佈至 Discord。
 disable-model-invocation: false
 context: fork
-allowed-tools: WebFetch Bash Write
+allowed-tools: WebFetch Bash Write mcp__plugin_discord_discord__reply
 ---
 
 ## 任務
@@ -60,7 +60,7 @@ TZ=Pacific/Auckland date '+%Y-%m'
 
 ---
 
-### 步驟 4：撰寫 Discord 訊息
+### 步驟 4：撰寫並發送 Discord 訊息
 
 按以下格式組合訊息，**嚴格限制在 1900 字元以內**（Discord 限制 2000 字元）：
 
@@ -95,6 +95,8 @@ TZ=Pacific/Auckland date '+%Y-%m'
 ```
 ⚠️ NZ Daily Digest: 無法取得足夠來源資料（{N}/4 成功），今日略過。
 ```
+
+組合好訊息後，使用 `mcp__plugin_discord_discord__reply` 發送至 channel `1486128557444042883`。
 
 ---
 
