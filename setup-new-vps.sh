@@ -518,6 +518,13 @@ GPGBATCH
     git config --global commit.gpgsign true
     git config --global gpg.program gpg
     echo \"    Git signing configured with key: \$KEY_ID\"
+
+    if ! grep -q 'GH_TOKEN' \$HOME/.bashrc 2>/dev/null; then
+      echo 'export GH_TOKEN=\"${GH_TOKEN}\"' >> \$HOME/.bashrc
+    else
+      sed -i 's|^export GH_TOKEN=.*|export GH_TOKEN=\"${GH_TOKEN}\"|' \$HOME/.bashrc
+    fi
+    echo '    GH_TOKEN persisted to .bashrc'
   "
 
   info "GitHub integration enabled."
@@ -633,16 +640,6 @@ cat > "${AGENT_WORKDIR}/start-agent.sh" <<'STARTSCRIPT'
 
 # Resolve script's own directory so it works regardless of cwd
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Load config from .env in the same directory
-if [ -f "${SCRIPT_DIR}/.env" ]; then
-  set -a
-  source "${SCRIPT_DIR}/.env"
-  set +a
-else
-  echo "Error: .env not found at ${SCRIPT_DIR}/.env"
-  exit 1
-fi
 
 export NVM_DIR="$HOME/.nvm"
 source "$NVM_DIR/nvm.sh"
