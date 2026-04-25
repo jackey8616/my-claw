@@ -159,7 +159,7 @@ DailyNote 路徑：`/home/laura/vault/02-Daily-Notes/{MONTH}/{DATE}.md`
 整理完成後，透過 Bash 呼叫 memory-agent 寫入：
 
 ```bash
-ollama launch claude --model gemma4:31b-cloud --agent memory-agent \
+ollama launch claude --model gemma4:31b-cloud -- --agent memory-agent \
   --allowedTools "mcp__memory__create_entities,mcp__memory__create_relations,mcp__memory__add_observations,mcp__memory__delete_entities,mcp__memory__delete_observations,mcp__memory__compact_graph" \
   --dangerously-skip-permissions \
   -p '<上面的 JSON>'
