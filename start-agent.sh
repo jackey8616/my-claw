@@ -1,9 +1,13 @@
 #!/bin/bash
 # Start Claude Code assistant in a persistent tmux session
-# Usage: bash start-agent.sh
+# Usage: bash start-agent.sh [prompt]
 
 # Resolve script's own directory so it works regardless of cwd
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Set default prompt if none provided
+DEFAULT_PROMPT="${1:-and are there anything I should know now?}"
+LAUNCH_PROMPT="Hey Laura, read and follow CLAUDE.md ${DEFAULT_PROMPT} Reply via Discord channel 1486128557444042883."
 
 export NVM_DIR="$HOME/.nvm"
 source "$NVM_DIR/nvm.sh"
@@ -21,14 +25,19 @@ fi
 SESSION="assistant"
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "Session '$SESSION' already running. Attaching..."
-  tmux attach -t "$SESSION"
+  if [ -n "$TMUX" ]; then
+    echo "Already inside tmux session. Sending launch command..."
+    tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ollama launch claude --model gemma4:31b-cloud -- --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"$LAUNCH_PROMPT\"" Enter
+  else
+    echo "Session '$SESSION' already running. Attaching..."
+    tmux attach -t "$SESSION"
+  fi
 else
   echo "Starting new Claude Code session..."
   tmux new-session -d -s "$SESSION" -x 220 -y 50 \
     -e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" \
     -e "TZ=$TZ"
-  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ollama launch claude --model gemma4:31b-cloud -- --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"Hey Laura, read and follow CLAUDE.md and are there anything I should know now? Reply via Discord channel 1486128557444042883.\"" Enter
+  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ollama launch claude --model gemma4:31b-cloud -- --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"$LAUNCH_PROMPT\"" Enter
   echo "Session started. Attaching..."
   tmux attach -t "$SESSION"
 fi
