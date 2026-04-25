@@ -6,8 +6,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Set default prompt if none provided
-DEFAULT_PROMPT="Hey Laura, read and follow CLAUDE.md and are there anything I should know now? Reply via Discord channel 1486128557444042883."
-LAUNCH_PROMPT="${1:-$DEFAULT_PROMPT}"
+DEFAULT_PROMPT="${1:-and are there anything I should know now?}"
+LAUNCH_PROMPT="Hey Laura, read and follow CLAUDE.md ${DEFAULT_PROMPT} Reply via Discord channel 1486128557444042883."
 
 export NVM_DIR="$HOME/.nvm"
 source "$NVM_DIR/nvm.sh"
