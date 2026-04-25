@@ -192,7 +192,7 @@ if [ -n "$ARGUMENTS" ] && [ "$ARGUMENTS" != "silent" ]; then
 else
   NEXT_PROMPT="Hey, are there anything I should know now? Reply via Discord channel 1486128557444042883."
 fi
-(while kill -0 "$PPID" 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "source /home/laura/.nvm/nvm.sh && cd /home/laura/my-claw && claude --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions \"$NEXT_PROMPT\"" Enter) >> "$LOG_DIR/session-archiver-debug.log" 2>&1 &
+(while kill -0 "$PPID" 2>/dev/null; do sleep 1; done && tmux send-keys -t "assistant:0.0" "bash /home/laura/my-claw/start-agent.sh" Enter) >> "$LOG_DIR/session-archiver-debug.log" 2>&1 &
 disown
 kill -TERM "$PPID"
 ```
