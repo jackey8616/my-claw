@@ -31,7 +31,7 @@ allowed-tools: Bash
 ## 執行
 
 ```bash
-ollama launch claude --model gemma4:31b-cloud --agent memory-agent \
+ollama launch claude --model gemma4:31b-cloud -- --agent memory-agent \
   --allowedTools "mcp__memory__create_entities,mcp__memory__create_relations,mcp__memory__add_observations,mcp__memory__delete_entities,mcp__memory__delete_observations,mcp__memory__compact_graph" \
   -p '$ARGUMENTS'
 ```
