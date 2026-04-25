@@ -116,6 +116,7 @@ R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Acce
 R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name (e.g. laura-vault)")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 CLAUDE_CODE_OAUTH_TOKEN=$(load_env "CLAUDE_CODE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
+OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key (for cloud-based models)")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
 
 # Derived paths
@@ -156,6 +157,17 @@ fi
 
 usermod -aG docker "$AGENT_USER"
 info "Added ${AGENT_USER} to docker group."
+
+# ============================================================
+# 2.5 Install Ollama
+# ============================================================
+info "Installing Ollama..."
+if command -v ollama &>/dev/null; then
+  warning "Ollama already installed, skipping."
+else
+  curl -fsSL https://ollama.com/install.sh | sh
+  info "Ollama installed."
+fi
 
 # ============================================================
 # 3. Move workdir to agent home
@@ -399,6 +411,12 @@ CLAUDEJSON
     echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
   else
     sed -i 's|^export CLAUDE_CODE_OAUTH_TOKEN=.*|export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"|' \$HOME/.bashrc
+  fi
+
+  if ! grep -q 'OLLAMA_API_KEY' \$HOME/.bashrc 2>/dev/null; then
+    echo 'export OLLAMA_API_KEY=\"${OLLAMA_API_KEY}\"' >> \$HOME/.bashrc
+  else
+    sed -i 's|^export OLLAMA_API_KEY=.*|export OLLAMA_API_KEY=\"${OLLAMA_API_KEY}\"|' \$HOME/.bashrc
   fi
 
   if ! grep -q '^export TZ=' \$HOME/.bashrc 2>/dev/null; then
