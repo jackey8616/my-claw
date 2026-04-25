@@ -28,11 +28,30 @@ allowed-tools: Read Write Glob Bash
 TZ=UTC date '+%Y-%m-%d'              # TODAY
 TZ=UTC date -d '7 days ago' '+%Y-%m-%d'  # WEEK_START
 TZ=UTC date '+W%V'                   # WEEK_NUM (ISO week number)
+TZ=UTC date '+%-V'                   # WEEK_NUM_INT (integer, for quarter check)
 ```
 
 - DATE_END = TODAY
 - DATE_START = WEEK_START（若 `$ARGUMENTS` 為 `YYYY-MM-DD` 格式則以此覆蓋）
 - WEEK_ID = `{YYYY}-{WEEK_NUM}`（例：`2026-W16`）
+
+**季度分類 review 檢查：**
+
+讀取 `/home/laura/vault/00-Laura-Persona/eval-config.md`，取得 `categories_last_reviewed` 欄位（格式：`YYYY-WNN`）。
+
+計算距今週數差：`CURRENT_WEEK_INT - LAST_REVIEW_WEEK_INT`（跨年時加 52）。
+
+若週數差 ≥ 13（約一季），在草稿末尾附加：
+
+```markdown
+## ⚠️ 季度分類 Review 提醒
+
+距上次 Wall of Failures 大類審查已超過 13 週（上次：{LAST_REVIEWED}）。
+建議本週回饋時一併確認五大分類是否仍足夠，或需新增類別。
+確認後請更新 `vault/00-Laura-Persona/eval-config.md` 的 `categories_last_reviewed` 欄位。
+```
+
+若 `eval-config.md` 不存在，建立初始檔（`categories_last_reviewed: {WEEK_ID}`）並略過提醒。
 
 ### 步驟 2：讀取 AGENTS.md
 
@@ -66,8 +85,28 @@ find /home/laura/vault/02-Daily-Notes -name "*.md" \
 
 ### 步驟 5：分析
 
+**0. 讀取上週指標（供趨勢比較）**
+
+```bash
+# 找最近一份已完成提案（非 draft、非本週）
+ls /home/laura/vault/00-Laura-Persona/proposals/*.md 2>/dev/null \
+  | grep -v '\-draft\.md' | sort | tail -1
+```
+
+讀取該檔案的 frontmatter，取得：
+- `PREV_RULE_COUNT`：上週規則總數
+- `PREV_VIOLATIONS`：上週違規次數
+- `PREV_DENSITY`：上週違規密度（%）
+
+若無上週資料，趨勢欄位填 `-`。
+
 **A. 規則違反 / 被忽略**
-- AGENTS.md 中哪些規則在本週 session 中被違反或忽略？引用具體 session 日期。
+
+對照 AGENTS.md **兩類規則**逐項檢查：
+1. 禁止規則（❌ 標記項）：本週 session 有無直接違反？
+2. 要求規則（四節 4.1 session 開始必做清單、4.2 情境行為表、五節核心功能步驟）：逐項確認每個 session 是否遵守。
+
+每條違規引用具體 session 日期。
 
 **B. 新行為模式（尚未有規則涵蓋）**
 - 本週反覆出現但 AGENTS.md 沒有明確規定的行為模式？
@@ -79,6 +118,45 @@ find /home/laura/vault/02-Daily-Notes -name "*.md" \
 - 原文引用
 - 建議修改後的文字（或明確說明「不修改原因：...」）
 - 不得留空或僅提「建議確認」
+
+**E. 量化指標計算**
+
+1. **規則總數 (Rule Count)**
+
+   分兩類計算後相加：
+   ```bash
+   AGENTS=/home/laura/vault/00-Laura-Persona/AGENTS.md
+   # 禁止規則：❌ 標記項目
+   PROHIBITION=$(grep -c '❌' "$AGENTS")
+   # 要求規則：數字步驟（如 4.1 必做清單）+ 行為表格資料列（如 4.2）+ 其他清單列點
+   REQUIRED_STEPS=$(grep -cE '^\s+[0-9]+\.\s+\*\*' "$AGENTS")
+   TABLE_RULES=$(grep -cE '^\|\s+[^-:|].*\|' "$AGENTS")
+   RULE_COUNT=$((PROHIBITION + REQUIRED_STEPS + TABLE_RULES))
+   ```
+   標記為 `RULE_COUNT`（禁止 `PROHIBITION` + 要求步驟 `REQUIRED_STEPS` + 要求表格列 `TABLE_RULES`），趨勢 = `RULE_COUNT - PREV_RULE_COUNT`（+/- 或 `-`）。
+
+2. **總對話輪數 (Total Turns)**
+   `TOTAL_TURNS`：加總本週所有 SessionLog 中的對話輪數（frontmatter `turns` 欄位為準；無此欄位則計 `## ` 段落數估算）。
+
+3. **總違規次數 (Total Violations)**
+   `TOTAL_VIOLATIONS`：A 節違規總次數（各 session 不重複計）。
+
+4. **違規密度 (Violation Density)**
+   `VIOLATION_DENSITY = (TOTAL_VIOLATIONS / TOTAL_TURNS) × 100%`（保留兩位小數）
+   趨勢 = 與 `PREV_DENSITY` 比較，輸出「↑X%」「↓X%」或「→（持平）」。
+
+5. **錯誤分類牆 (Wall of Failures)**
+   將 A 節所有違規各歸入以下五類之一：
+   - **遺忘 (Omission)**：應做未做——要求規則未執行
+   - **逾越 (Commission)**：不該做卻做——禁止規則被違反
+   - **偏離 (Deviation)**：語氣/格式/邏輯漂移，未達品質標準
+   - **幻覺 (Hallucination)**：自創事實或規則
+   - **衝突 (Conflict)**：規則互相矛盾導致執行失敗
+
+   以表格形式輸出。優先級：Omission / Commission → Deviation → Hallucination / Conflict。
+
+> **D. 使用者體感** 由模式 B 補入，此處略過。
+> 草稿節次順序：**📊 規則執行指標（含 Wall of Failures）→ A → B → C → D**
 
 ### 步驟 6：產出分析草稿
 
@@ -93,11 +171,31 @@ date_range: {DATE_START} to {DATE_END}
 generated: {TODAY}
 sessions_analyzed: {N}
 status: awaiting-feedback
+metrics:
+  rule_count: {RULE_COUNT}
+  total_turns: {TOTAL_TURNS}
+  total_violations: {TOTAL_VIOLATIONS}
+  violation_density: {VIOLATION_DENSITY}
 ---
 
 ## 分析摘要
 
 {2-3 句話說明本週主要發現}
+
+## 📊 規則執行指標
+
+| 指標項目 | 數值 | 趨勢 (vs 上週) |
+| :--- | :--- | :--- |
+| 規則總數 (Rule Count) | {RULE_COUNT} 條 | {+Δ / -Δ / -} |
+| 總對話輪數 (Total Turns) | {TOTAL_TURNS} | - |
+| 總違規次數 (Total Violations) | {TOTAL_VIOLATIONS} | {+Δ / -Δ / -} |
+| **違規密度 (Violation Density)** | **{VIOLATION_DENSITY}%** | **{↑X% / ↓X% / →}** |
+
+**錯誤分類牆 (Wall of Failures)**
+
+| 違規描述 | 分類 |
+|---|---|
+{每條違規一行：\| 描述 \| 遺忘 / 逾越 / 偏離 / 幻覺 / 衝突 \|}
 
 ## A. 規則違反 / 被忽略
 
