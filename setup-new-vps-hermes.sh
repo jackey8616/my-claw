@@ -206,29 +206,11 @@ CLAUDEMD
 sed -i "s|\\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/BOOTSTRAP.md"
 chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/BOOTSTRAP.md"
 
-info "Writing start-agent.sh..."
-cat > "${AGENT_WORKDIR}/start-agent.sh" <<'STARTSCRIPT'
-#!/bin/bash
-# Start Hermes Assistant in a persistent tmux session
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export TZ="$TIMEZONE"
-SESSION="assistant"
-
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "Session '$SESSION' already running. Attaching..."
-  tmux attach -t "$SESSION"
-else
-  echo "Starting new Hermes session..."
-  tmux new-session -d -s "$SESSION" -x 220 -y 50
-  tmux send-keys -t "$SESSION" "source ~/.bashrc && cd ${SCRIPT_DIR} && hermes launch" Enter
-  tmux attach -t "$SESSION"
-fi
-
-STARTSCRIPT
-chmod +x "${AGENT_WORKDIR}/start-agent.sh"
-chown "${AGENT_USER}:${AGENT_USER} "${AGENT_WORKDIR}/start-agent.sh"
-
-apt-get "${APT_OPTS[@]}" install -y tmux -qq
+info "Installing and configuring Hermes Gateway service..."
+sudo -u "$AGENT_USER" bash -c '
+  hermes gateway install
+  hermes gateway start
+'
 
 info "Installing crontab..."
 sudo -u "$AGENT_USER" bash -c '
