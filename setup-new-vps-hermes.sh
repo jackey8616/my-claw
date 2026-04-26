@@ -90,6 +90,10 @@ else
 fi
 usermod -aG docker "$AGENT_USER"
 
+info "Installing gh CLI..."
+if ! command -v gh &>/dev/null; then
+  type -p curl >/dev/null && curl -fsSL https://github.com/cli/cli/install.sh | sh
+fi
 info "Installing Ollama..."
 if command -v ollama &>/dev/null; then
   warning "Ollama already installed."
