@@ -33,4 +33,5 @@ git clone "${repo_url}" /root/"$REPO_NAME"
 cd /root/"$REPO_NAME"
 
 # ── Run setup in non-interactive mode ──
-bash setup-new-vps.sh --non-interactive
+# bash setup-new-vps.sh --non-interactive
+bash setup-new-vps-hermes.sh --non-interactive
