@@ -80,8 +80,10 @@ else
   chown "${AGENT_USER}:${AGENT_USER}" "$AGENT_HOME"
 fi
 
-info "Installing Docker..."
+info "Updating System..."
 apt-get "${APT_OPTS[@]}" update -qq && apt-get "${APT_OPTS[@]}" upgrade -y -qq
+
+info "Installing Docker..."
 apt-get "${APT_OPTS[@]}" install -y -qq unzip jq bubblewrap socat uidmap gnupg
 if command -v docker &>/dev/null; then
   warning "Docker already installed."
@@ -156,35 +158,37 @@ systemctl daemon-reload
 systemctl enable vault-mount.service
 systemctl start vault-mount.service || warning "vault-mount failed to start immediately."
 
-info "Installing Hermes Agent (Headless)..."
+info "Installing Hermes Agent dependencies..."
+apt-get "${APT_OPTS[@]}" install -y -qq python3-pip python3-venv git
+
+info "Setting up Hermes Agent (Headless)..."
 sudo -u "$AGENT_USER" bash -c '
-  apt-get update -qq && apt-get install -y -qq python3-pip python3-venv git
   python3 -m venv ~/.hermes-venv
   ~/.hermes-venv/bin/pip install --upgrade pip
   ~/.hermes-venv/bin/pip install hermes-agent
-  if ! grep -q ".hermes-venv/bin" \$HOME/.bashrc 2>/dev/null; then
-    echo "export PATH=\"\$HOME/.hermes-venv/bin:\$PATH\"" >> \$HOME/.bashrc
+  if ! grep -q ".hermes-venv/bin" $HOME/.bashrc 2>/dev/null; then
+    echo "export PATH=\"$HOME/.hermes-venv/bin:\$PATH\"" >> $HOME/.bashrc
   fi
 '
 
 info "Configuring Hermes static settings..."
-sudo -u "$AGENT_USER" bash -c "
-  mkdir -p \$HOME/.hermes
-  cat > \$HOME/.hermes/config.yaml <<CONFIGYAML
+mkdir -p "/home/${AGENT_USER}/.hermes"
+cat > "/home/${AGENT_USER}/.hermes/config.yaml" <<CONFIGYAML
 platforms:
   discord:
-    token: \"\${DISCORD_BOT_TOKEN}\"
-    home_channel: \"1486128557444042883\"
+    token: "${DISCORD_BOT_TOKEN}"
+    home_channel: "1486128557444042883"
 providers:
   ollama:
-    api_key: \"\${OLLAMA_API_KEY}\"
-    base_url: \"http://localhost:11434\"
+    api_key: "${OLLAMA_API_KEY}"
+    base_url: "http://localhost:11434"
 settings:
-  default_model: \"gemma4:31b-cloud\"
-  timezone: \"\${TIMEZONE}\"
+  default_model: "gemma4:31b-cloud"
+  timezone: "${TIMEZONE}"
 CONFIGYAML
-  chmod 600 \$HOME/.hermes/config.yaml
-"
+
+chown -R "${AGENT_USER}:${AGENT_USER}" "/home/${AGENT_USER}/.hermes"
+chmod 600 "/home/${AGENT_USER}/.hermes/config.yaml"
 
 info "Migrating legacy skills..."
 sudo -u "$AGENT_USER" bash -c "
