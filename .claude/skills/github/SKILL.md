@@ -77,8 +77,8 @@ jj bookmark list
    jj diff -r <change-id>
    ```
 
-   - 若變更邏輯上屬於前一個 commit → `jj squash -r <id>`
-   - 若是獨立功能 → `jj describe -r <id> -m "<conventional-commit-message>"`
+   - 若變更邏輯上屬於前一個 commit $\rightarrow$ `jj squash -r <id>`
+   - 若是獨立功能 $\rightarrow$ `jj describe -r <id> -m "<conventional-commit-message>"`
 
 4. 所有 commits 都有 meaningful description 後，回報清單給使用者確認。
 
@@ -108,9 +108,9 @@ jj bookmark list
 3. 將 bookmark 同步至 git，再推送 remote：
 
    ```bash
-   # colocated repo 中 jj bookmark 已對應 git branch，直接 git push
-   source /home/laura/my-claw/.env
-   git push https://x-access-token:${GH_TOKEN}@github.com/<owner>/<repo>.git <bookmark>
+# colocated repo 中 jj bookmark 已對應 git branch，直接 git push
+   gh auth status &>/dev/null || source /home/laura/my-claw/.env
+   git push origin <bookmark>
    ```
 
 4. 收集 PR 資訊：
@@ -122,12 +122,12 @@ jj bookmark list
 5. 建立 PR：
 
    ```bash
-   source /home/laura/my-claw/.env
-   curl -s -X POST \
-     -H "Authorization: Bearer ${GH_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d "{\"title\": \"<title>\", \"body\": \"<body>\", \"head\": \"<bookmark>\", \"base\": \"main\"}" \
-     https://api.github.com/repos/<owner>/<repo>/pulls
+   # 使用 GitHub CLI (gh) 建立 PR
+   gh pr create \
+     --title "<title>" \
+     --body "<body>" \
+     --head <bookmark> \
+     --base main
    ```
 
 6. 從回應取出 PR URL 並回報
@@ -141,24 +141,19 @@ jj bookmark list
 ### 步驟
 
 1. 從 `$ARGUMENTS` 取出 PR 編號
+
 2. 查詢 PR 狀態確認可合併：
 
    ```bash
-   source /home/laura/my-claw/.env
-   curl -s \
-     -H "Authorization: Bearer ${GH_TOKEN}" \
-     https://api.github.com/repos/<owner>/<repo>/pulls/<PR#>
+   gh pr view <PR#>
    ```
 
 3. 顯示 PR 標題、分支、狀態，請使用者確認
+
 4. 執行合併（預設 squash merge）：
 
    ```bash
-   curl -s -X PUT \
-     -H "Authorization: Bearer ${GH_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d "{\"merge_method\": \"squash\"}" \
-     https://api.github.com/repos/<owner>/<repo>/pulls/<PR#>/merge
+   gh pr merge <PR#> --squash --delete-branch
    ```
 
 5. 合併成功後，拉取最新 main 並刪除本地 bookmark：
@@ -179,25 +174,24 @@ jj bookmark list
 ### 步驟
 
 1. 從 `$ARGUMENTS` 取出 upstream repo
+
 2. 取得 Laura 的 GitHub username：
 
    ```bash
    source /home/laura/my-claw/.env
-   curl -s -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/user | grep '"login"'
+   gh api user --jq '.login'
    ```
 
 3. Fork upstream repo（若尚未 fork）：
 
    ```bash
-   curl -s -X POST \
-     -H "Authorization: Bearer ${GH_TOKEN}" \
-     https://api.github.com/repos/<upstream-owner>/<upstream-repo>/forks
+   gh repo fork <upstream-owner>/<upstream-repo> --clone
    ```
 
 4. Clone fork 至暫存目錄（使用 git，upstream-pr 不需要 jj）：
 
    ```bash
-   git clone https://x-access-token:${GH_TOKEN}@github.com/<my-username>/<upstream-repo>.git /tmp/<upstream-repo>
+   gh repo clone <my-username>/<upstream-repo> /tmp/<upstream-repo>
    ```
 
 5. 建立 feature branch、套用修改、commit、推送：
@@ -208,18 +202,18 @@ jj bookmark list
    # 套用修改
    git add -A
    git commit -m "<message>"
-   git push https://x-access-token:${GH_TOKEN}@github.com/<my-username>/<upstream-repo>.git <feature-branch>
+   git push origin <feature-branch>
    ```
 
 6. 對 upstream 開 PR：
 
    ```bash
-   source /home/laura/my-claw/.env
-   curl -s -X POST \
-     -H "Authorization: Bearer ${GH_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d "{\"title\": \"<title>\", \"body\": \"<body>\", \"head\": \"<my-username>:<feature-branch>\", \"base\": \"main\"}" \
-     https://api.github.com/repos/<upstream-owner>/<upstream-repo>/pulls
+   gh pr create \
+     --repo <upstream-owner>/<upstream-repo> \
+     --title "<title>" \
+     --body "<body>" \
+     --head <my-username>:<feature-branch> \
+     --base main
    ```
 
 7. 回報 PR URL
@@ -232,3 +226,19 @@ jj bookmark list
 - API 回應若含 `"message"` 欄位通常代表錯誤，顯示給使用者
 - 合併操作前務必讓使用者確認
 - bookmark 命名全小寫 kebab-case，不使用 `main` 或 `master`
+
+---
+
+## Quick Reference Table
+
+| Action | Recommended Command (gh) | Fallback/Advanced |
+|--------|--------------------------|------------------|
+| Clone | `gh repo clone o/r` | `git clone https://github.com/o/r.git` |
+| Create repo | `gh repo create name --public` | `curl POST /user/repos` |
+| Fork | `gh repo fork o/r --clone` | `curl POST /repos/o/r/forks` |
+| Repo info | `gh repo view o/r` | `curl GET /repos/o/r` |
+| Edit settings | `gh repo edit --...` | `curl PATCH /repos/o/r` |
+| Create release | `gh release create v1.0` | `curl POST /repos/o/r/releases` |
+| List workflows | `gh workflow list` | `curl GET /repos/o/r/actions/workflows` |
+| Rerun CI | `gh run rerun ID` | `curl POST /repos/o/r/actions/runs/ID/rerun` |
+| Set secret | `gh secret set KEY` | `curl PUT /repos/o/r/actions/secrets/KEY` |
