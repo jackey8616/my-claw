@@ -108,9 +108,9 @@ jj bookmark list
 3. 將 bookmark 同步至 git，再推送 remote：
 
    ```bash
-   # colocated repo 中 jj bookmark 已對應 git branch，直接 git push
-   source /home/laura/my-claw/.env
-   git push "https://x-access-token:${GH_TOKEN}@github.com/<owner>/<repo>.git" <bookmark>
+# colocated repo 中 jj bookmark 已對應 git branch，直接 git push
+   gh auth status &>/dev/null || source /home/laura/my-claw/.env
+   git push origin <bookmark>
    ```
 
 4. 收集 PR 資訊：
@@ -191,7 +191,7 @@ jj bookmark list
 4. Clone fork 至暫存目錄（使用 git，upstream-pr 不需要 jj）：
 
    ```bash
-   git clone "https://x-access-token:${GH_TOKEN}@github.com/<my-username>/<upstream-repo>.git" /tmp/<upstream-repo>
+   gh repo clone <my-username>/<upstream-repo> /tmp/<upstream-repo>
    ```
 
 5. 建立 feature branch、套用修改、commit、推送：
@@ -202,7 +202,7 @@ jj bookmark list
    # 套用修改
    git add -A
    git commit -m "<message>"
-   git push "https://x-access-token:${GH_TOKEN}@github.com/<my-username>/<upstream-repo>.git" <feature-branch>
+   git push origin <feature-branch>
    ```
 
 6. 對 upstream 開 PR：
