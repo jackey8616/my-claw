@@ -183,9 +183,6 @@ chmod 600 "/home/${AGENT_USER}/.hermes/config.yaml"
 info "Setting up Hermes Agent (Headless)..."
 sudo -u "$AGENT_USER" bash -c '
   curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup
-  if ! grep -q ".hermes-venv/bin" $HOME/.bashrc 2>/dev/null; then
-    echo "export PATH=\"\$HOME/.hermes-venv/bin:\$PATH\"" >> \$HOME/.bashrc
-  fi
 '
 
 info "Migrating legacy skills..."
