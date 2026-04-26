@@ -161,16 +161,6 @@ systemctl start vault-mount.service || warning "vault-mount failed to start imme
 info "Installing Hermes Agent dependencies..."
 apt-get "${APT_OPTS[@]}" install -y -qq python3-pip python3-venv git
 
-info "Setting up Hermes Agent (Headless)..."
-sudo -u "$AGENT_USER" bash -c '
-  python3 -m venv ~/.hermes-venv
-  ~/.hermes-venv/bin/pip install --upgrade pip
-  ~/.hermes-venv/bin/pip install hermes-agent
-  if ! grep -q ".hermes-venv/bin" $HOME/.bashrc 2>/dev/null; then
-    echo "export PATH=\"$HOME/.hermes-venv/bin:\$PATH\"" >> $HOME/.bashrc
-  fi
-'
-
 info "Configuring Hermes static settings..."
 mkdir -p "/home/${AGENT_USER}/.hermes"
 cat > "/home/${AGENT_USER}/.hermes/config.yaml" <<CONFIGYAML
@@ -189,6 +179,14 @@ CONFIGYAML
 
 chown -R "${AGENT_USER}:${AGENT_USER}" "/home/${AGENT_USER}/.hermes"
 chmod 600 "/home/${AGENT_USER}/.hermes/config.yaml"
+
+info "Setting up Hermes Agent (Headless)..."
+sudo -u "$AGENT_USER" bash -c '
+  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+  if ! grep -q ".hermes-venv/bin" $HOME/.bashrc 2>/dev/null; then
+    echo "export PATH=\"\$HOME/.hermes-venv/bin:\$PATH\"" >> \$HOME/.bashrc
+  fi
+'
 
 info "Migrating legacy skills..."
 sudo -u "$AGENT_USER" bash -c "
@@ -211,10 +209,10 @@ sed -i "s|\\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/BOOTSTRAP.md"
 chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/BOOTSTRAP.md"
 
 info "Installing and configuring Hermes Gateway service..."
-sudo -u "$AGENT_USER" bash -c '
-  hermes gateway install
-  hermes gateway start
-'
+sudo -u "$AGENT_USER" bash -c "
+  \$HOME/.hermes-venv/bin/hermes gateway install
+  \$HOME/.hermes-venv/bin/hermes gateway start
+"
 
 info "Installing crontab..."
 sudo -u "$AGENT_USER" bash -c '
