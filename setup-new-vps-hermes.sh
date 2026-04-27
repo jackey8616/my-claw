@@ -63,6 +63,7 @@ R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Acce
 R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key")
+GH_TOKEN=$(load_env "GH_TOKEN" "GitHub Token")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone")
 
 AGENT_HOME="/home/${AGENT_USER}"
@@ -161,30 +162,30 @@ systemctl start vault-mount.service || warning "vault-mount failed to start imme
 info "Installing Hermes Agent dependencies..."
 apt-get "${APT_OPTS[@]}" install -y -qq python3-pip python3-venv git ripgrep
 
-info "Configuring Hermes static settings..."
-mkdir -p "/home/${AGENT_USER}/.hermes"
-cat > "/home/${AGENT_USER}/.hermes/config.yaml" <<CONFIGYAML
-platforms:
-  discord:
-    token: "${DISCORD_BOT_TOKEN}"
-    home_channel: "1486128557444042883"
-providers:
-  ollama:
-    api_key: "${OLLAMA_API_KEY}"
-    base_url: "http://localhost:11434"
-settings:
-  default_model: "gemma4:31b-cloud"
-  timezone: "${TIMEZONE}"
-CONFIGYAML
-
-chown -R "${AGENT_USER}:${AGENT_USER}" "/home/${AGENT_USER}/.hermes"
-chmod 600 "/home/${AGENT_USER}/.hermes/config.yaml"
-
 info "Setting up Hermes Agent (Headless)..."
 sudo -u "$AGENT_USER" bash -c '
   curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup
   source ~/.bashrc
 '
+
+info "Patching .env file..."
+DOTENV_PATH="${AGENT_HOME}/.hermes/.env"
+
+sed -i "s|^# GITHUB_TOKEN=.*|GH_TOKEN=\"${GH_TOKEN}\"|" "$DOTENV_PATH"
+sed -i "s|^# OLLAMA_API_KEY=.*|OLLAMA_API_KEY=\"${OLLAMA_API_KEY}\"|" "$DOTENV_PATH"
+
+if ! grep -q "DISCORD_BOT_TOKEN" "$DOTENV_PATH"; then
+cat >> "$DOTENV_PATH" <<EOF
+
+# Discord Settings
+DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
+DISCORD_ALLOWED_USERS="clooooode"
+DISCORD_HOME_CHANNEL="1486128557444042883"
+EOF
+fi
+
+chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
+chmod 600 "$DOTENV_PATH"
 
 info "Migrating legacy skills..."
 sudo -u "$AGENT_USER" bash -c "
