@@ -16,15 +16,8 @@ export R2_ACCESS_KEY_ID="${r2_access_key_id}"
 export R2_SECRET_ACCESS_KEY="${r2_secret_access_key}"
 export R2_BUCKET_NAME="${r2_bucket_name}"
 export DISCORD_BOT_TOKEN="${discord_bot_token}"
-export CLAUDE_CODE_OAUTH_TOKEN="${claude_oauth_token}"
 export TIMEZONE="${timezone}"
-%{ if ollama_api_key != "" ~}
 export OLLAMA_API_KEY="${ollama_api_key}"
-%{ endif ~}
-# GitHub auto-detected: enabled when GH_TOKEN is set AND vault GPG key exists (after vault mount)
-%{ if gh_token != "" ~}
-export GH_TOKEN="${gh_token}"
-%{ endif ~}
 
 # ── Clone repo ──
 apt-get install -y -qq git
@@ -33,5 +26,4 @@ git clone "${repo_url}" /root/"$REPO_NAME"
 cd /root/"$REPO_NAME"
 
 # ── Run setup in non-interactive mode ──
-# bash setup-new-vps.sh --non-interactive
-bash setup-new-vps-hermes.sh --non-interactive
+bash setup-new-vps.sh --non-interactive
