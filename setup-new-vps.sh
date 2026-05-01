@@ -197,7 +197,7 @@ DISCORD_HOME_CHANNEL=1486128557444042883
 TZ=${TIMEZONE}
 EOF
 chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
-chmod 600 "$DOTENV_PATH"
+chmod 644 "$DOTENV_PATH"
 
 # Write docker-compose.yml (lives in repo root)
 COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
@@ -214,7 +214,7 @@ services:
       - ${REPO_WORKDIR}/.env:/opt/data/.env
       - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
       - ${REPO_WORKDIR}/skills:/opt/data/skills
-      - ${HOST_VAULT}/memories:/opt/data/memories
+      - ${HOST_VAULT}/00-Laura-Persona/memories:/opt/data/memories
       - ${HOST_VAULT}:/vault
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: host
