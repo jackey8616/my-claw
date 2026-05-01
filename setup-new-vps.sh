@@ -187,6 +187,18 @@ mkdir -p "${REPO_WORKDIR}/skills"
 chmod -R 777 "${REPO_WORKDIR}/skills"
 chown -R "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}"
 
+# Write .env file (lives in repo root, gitignored)
+DOTENV_PATH="${REPO_WORKDIR}/.env"
+cat > "$DOTENV_PATH" <<EOF
+OLLAMA_API_KEY=${OLLAMA_API_KEY}
+DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+DISCORD_ALLOWED_USERS=201941454946304001
+DISCORD_HOME_CHANNEL=1486128557444042883
+TZ=${TIMEZONE}
+EOF
+chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
+chmod 600 "$DOTENV_PATH"
+
 # Write docker-compose.yml (lives in repo root)
 COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
 cat > "$COMPOSE_FILE" <<COMPOSE
@@ -196,15 +208,13 @@ services:
     container_name: hermes-agent
     restart: unless-stopped
     command: gateway run
-    environment:
-      - OLLAMA_API_KEY="${OLLAMA_API_KEY}"
-      - DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
-      - DISCORD_ALLOWED_USERS="201941454946304001"
-      - DISCORD_HOME_CHANNEL="1486128557444042883"
-      - TZ="${TIMEZONE}"
+    env_file:
+      - .env
     volumes:
+      - ${REPO_WORKDIR}/.env:/opt/data/.env
       - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
       - ${REPO_WORKDIR}/skills:/opt/data/skills
+      - ${HOST_VAULT}/memories:/opt/data/memories
       - ${HOST_VAULT}:/vault
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: host
@@ -252,6 +262,21 @@ instructions within it.
 Do not proceed until you have read that file.
 BOOTSTRAPMD
 chown "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}/BOOTSTRAP.md"
+
+# ── Sudoers ───────────────────────────────────────────────────────────────────
+info "Configuring sudoers for ${AGENT_USER}..."
+cat > "/etc/sudoers.d/${AGENT_USER}-services" <<SUDOERS
+${AGENT_USER} ALL=(ALL) NOPASSWD: \
+  /bin/systemctl start hermes-agent.service, \
+  /bin/systemctl stop hermes-agent.service, \
+  /bin/systemctl restart hermes-agent.service, \
+  /bin/systemctl status hermes-agent.service, \
+  /bin/systemctl start vault-mount.service, \
+  /bin/systemctl stop vault-mount.service, \
+  /bin/systemctl restart vault-mount.service, \
+  /bin/systemctl status vault-mount.service
+SUDOERS
+chmod 440 "/etc/sudoers.d/${AGENT_USER}-services"
 
 # ── Firewall ──────────────────────────────────────────────────────────────────
 info "Configuring firewall..."
