@@ -214,7 +214,11 @@ services:
       - ${REPO_WORKDIR}/.env:/opt/data/.env
       - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
       - ${REPO_WORKDIR}/skills:/opt/data/skills
-      - ${HOST_VAULT}/00-Laura-Persona/memories:/opt/data/memories
+      - ${HOST_VAULT}/00-Laura-Persona/memories/state.db:/opt/data/state.db
+      - ${HOST_VAULT}/00-Laura-Persona/memories/state.db-shm:/opt/data/state.db-shm
+      - ${HOST_VAULT}/00-Laura-Persona/memories/state.db-wal:/opt/data/state.db-wal
+      - ${HOST_VAULT}/00-Laura-Persona/memories/persist-memories:/opt/data/memories
+      - ${HOST_VAULT}/00-Laura-Persona/memories/memory-graph.json:/opt/data/memory-graph.json
       - ${HOST_VAULT}:/vault
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: host
