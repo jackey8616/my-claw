@@ -5,49 +5,17 @@ if [ -z "$BASH_VERSION" ]; then
 fi
 set -e
 
-# --non-interactive: read all config from env vars or .env; fail on missing required vars
 NON_INTERACTIVE=false
 for arg in "$@"; do
   [[ "$arg" == "--non-interactive" ]] && NON_INTERACTIVE=true
 done
 
-# ============================================================
-# Prevent ALL apt/dpkg interactive prompts.
-# For conffile conflicts (e.g. openssh-server), keep the
-# locally installed version (--force-confold).
-# ============================================================
 export DEBIAN_FRONTEND=noninteractive
 export DEBCONF_NONINTERACTIVE_SEEN=true
 APT_OPTS=(
   -o Dpkg::Options::="--force-confdef"
   -o Dpkg::Options::="--force-confold"
 )
-
-# ============================================================
-# setup-vps.sh
-# Deploy personal Claude Code assistant on a fresh VPS
-# Run as root on a fresh Ubuntu 22.04/24.04
-#
-# What this script does:
-#   1.  Create a dedicated user
-#   2.  Install Docker (general purpose, no longer used for vault sync)
-#   3.  Move workdir to agent home
-#   4.  Install rclone + configure Cloudflare R2 + systemd vault mount
-#   5.  Install Node.js + Claude Code (native)
-#   6.  Install Bun (required for Channels plugins)
-#   6.5 Install jj (Jujutsu VCS, colocated with git)
-#   7.  Configure Claude Code auth (OAuth Token)
-#   7.2 Install MCP server dependencies (.mcp.json is in repo)
-#   7.5 Configure Claude Code Hooks
-#   8.  Install Discord Channels plugin
-#   9.  Write CLAUDE.md pointing to Persona in vault
-#   10. Write tmux startup script
-#   11. Firewall
-# ============================================================
-
-# ============================================================
-# Helpers
-# ============================================================
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -69,127 +37,96 @@ update_env() {
   fi
 }
 
-# load_env: .env -> env var -> prompt (interactive) or error (non-interactive)
-#
-# Priority:
-#   1. Value already in .env file  (not rewritten)
-#   2. Environment variable        (not written to .env)
-#   3. Interactive: ask the user   (written to .env)
-#      Non-interactive: fatal error
 load_env() {
   local env_var_name=$1
   local prompt_text=${2:-$1}
   local val
-
-  # 1. Read from .env
   val=$(grep "^${env_var_name}=" .env 2>/dev/null | cut -d '=' -f2- | tr -d '"')
-
-  # 2. Fall back to environment variable
   [[ -z "$val" ]] && val="${!env_var_name}"
-
   if [[ -n "$val" ]]; then
     echo "$val"
     return
   fi
-
-  # 3. Nothing found
   if $NON_INTERACTIVE; then
-    error "Required variable missing: ${env_var_name} (set in .env or as env var)"
+    error "Required variable missing: ${env_var_name}"
   fi
-
-  # Interactive: prompt the user
   read -p "Enter ${prompt_text}: " val
   update_env "$env_var_name" "$val"
   echo "$val"
 }
 
-# ============================================================
-# Load config from .env
-# ============================================================
-$NON_INTERACTIVE || touch .env
-
+# ── Configuration ────────────────────────────────────────────────────────────
 info "Loading configuration..."
-AGENT_USER=$(load_env "AGENT_USER" "dedicated user name (e.g. myagent)")
-R2_ACCOUNT_ID=$(load_env "R2_ACCOUNT_ID" "Cloudflare Account ID (from R2 dashboard)")
-R2_ACCESS_KEY_ID=$(load_env "R2_ACCESS_KEY_ID" "R2 API Token Access Key ID (vps-rclone token)")
-R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Access Key (vps-rclone token)")
-R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name (e.g. laura-vault)")
+AGENT_USER=$(load_env "AGENT_USER" "dedicated user name")
+R2_ACCOUNT_ID=$(load_env "R2_ACCOUNT_ID" "Cloudflare Account ID")
+R2_ACCESS_KEY_ID=$(load_env "R2_ACCESS_KEY_ID" "R2 API Token Access Key ID")
+R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Access Key")
+R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
-CLAUDE_CODE_OAUTH_TOKEN=$(load_env "CLAUDE_CODE_OAUTH_TOKEN" "Claude OAuth Token (run: claude setup-token on local machine)")
-OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key (for cloud-based models)")
-TIMEZONE=$(load_env "TIMEZONE" "Timezone (e.g. Asia/Taipei)")
+OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key")
+TIMEZONE=$(load_env "TIMEZONE" "Timezone")
 
-# Derived paths
-AGENT_HOME="/home/${AGENT_USER}"
-VAULT_LOCAL="${AGENT_HOME}/vault"
-PERSONA_LOCAL="${AGENT_HOME}/vault/00-Laura-Persona"
+# Docker image for Hermes Agent – override via env if you use a private registry
+HERMES_IMAGE="${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}"
+
+HOST_AGENT_HOME="/home/${AGENT_USER}"
+HOST_VAULT="${HOST_AGENT_HOME}/vault"
 WORKDIR=$(pwd)
-AGENT_WORKDIR="${AGENT_HOME}/$(basename $WORKDIR)"
+REPO_WORKDIR="${HOST_AGENT_HOME}/$(basename "$WORKDIR")"
 
-# ============================================================
-# 1. Create dedicated agent user
-# ============================================================
+# ── User ─────────────────────────────────────────────────────────────────────
 info "Creating agent user: ${AGENT_USER}"
-
 if id "$AGENT_USER" &>/dev/null; then
-  warning "User ${AGENT_USER} already exists, skipping."
+  warning "User ${AGENT_USER} already exists."
 else
   useradd -m -s /bin/bash "$AGENT_USER"
-  mkdir -p "$AGENT_HOME"
-  chown "${AGENT_USER}:${AGENT_USER}" "$AGENT_HOME"
-  info "User ${AGENT_USER} created."
+  chown "${AGENT_USER}:${AGENT_USER}" "$HOST_AGENT_HOME"
 fi
 
-# ============================================================
-# 2. Install Docker
-# ============================================================
-info "Checking Docker..."
-apt-get "${APT_OPTS[@]}" update -qq && apt-get "${APT_OPTS[@]}" upgrade -y -qq
-apt-get "${APT_OPTS[@]}" install -y -qq unzip jq bubblewrap socat uidmap gnupg
+# ── System packages ───────────────────────────────────────────────────────────
+info "Updating system..."
+apt-get "${APT_OPTS[@]}" update -qq
+apt-get "${APT_OPTS[@]}" upgrade -y -qq
 
+info "Installing base packages..."
+apt-get "${APT_OPTS[@]}" install -y -qq \
+  unzip jq curl fuse3
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+info "Installing Docker..."
 if command -v docker &>/dev/null; then
-  warning "Docker already installed, skipping."
+  warning "Docker already installed."
 else
-  info "Installing Docker..."
-  # Pass DEBIAN_FRONTEND so the Docker install script also stays non-interactive
   curl -fsSL https://get.docker.com | DEBIAN_FRONTEND=noninteractive sh
 fi
-
 usermod -aG docker "$AGENT_USER"
-info "Added ${AGENT_USER} to docker group."
 
-# ============================================================
-# 2.5 Install Ollama
-# ============================================================
+# ── Ollama ────────────────────────────────────────────────────────────────────
 info "Installing Ollama..."
 if command -v ollama &>/dev/null; then
-  warning "Ollama already installed, skipping."
+  warning "Ollama already installed."
 else
   curl -fsSL https://ollama.com/install.sh | sh
-  info "Ollama installed."
+  systemctl enable --now ollama
 fi
 
-# ============================================================
-# 3. Move workdir to agent home
-# ============================================================
-info "Moving workdir to ${AGENT_WORKDIR}..."
-if [ "$WORKDIR" != "$AGENT_WORKDIR" ]; then
-  mv "$WORKDIR" "$AGENT_WORKDIR"
-  chown -R "${AGENT_USER}:${AGENT_USER}" "$AGENT_WORKDIR"
+# ── Move workdir ──────────────────────────────────────────────────────────────
+info "Moving workdir to ${REPO_WORKDIR}..."
+if [ "$WORKDIR" != "$REPO_WORKDIR" ]; then
+  mv "$WORKDIR" "$REPO_WORKDIR"
+  chown -R "${AGENT_USER}:${AGENT_USER}" "$REPO_WORKDIR"
 fi
-export WORKDIR="$AGENT_WORKDIR"
+export WORKDIR="$REPO_WORKDIR"
 
-# ============================================================
-# 4. Install rclone + configure Cloudflare R2 + systemd vault mount
-# ============================================================
+# ── rclone ────────────────────────────────────────────────────────────────────
 info "Installing rclone..."
 if command -v rclone &>/dev/null; then
-  warning "rclone already installed ($(rclone --version | head -1)), skipping."
+  warning "rclone already installed."
 else
   curl -fsSL https://rclone.org/install.sh | bash
 fi
 
-info "Configuring rclone R2 remote for ${AGENT_USER}..."
+info "Configuring rclone R2 remote..."
 sudo -u "$AGENT_USER" bash -c "
   mkdir -p \$HOME/.config/rclone
   cat > \$HOME/.config/rclone/rclone.conf <<RCLONECONF
@@ -202,18 +139,12 @@ endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
 acl = private
 RCLONECONF
   chmod 600 \$HOME/.config/rclone/rclone.conf
-  echo '    rclone config written.'
 "
 
-info "Verifying R2 connection..."
-sudo -u "$AGENT_USER" bash -c "
-  rclone lsd r2:${R2_BUCKET_NAME} --max-depth 1 2>&1 | head -5 || true
-"
-
-info "Creating vault directory and setting up systemd mount service..."
-mkdir -p "$VAULT_LOCAL"
-apt-get "${APT_OPTS[@]}" install -y -qq fuse3
-chown -R "${AGENT_USER}:${AGENT_USER}" "$VAULT_LOCAL"
+# ── Vault FUSE mount ──────────────────────────────────────────────────────────
+info "Setting up vault mount..."
+mkdir -p "$HOST_VAULT"
+chown -R "${AGENT_USER}:${AGENT_USER}" "$HOST_VAULT"
 
 RCLONE_BIN=$(which rclone)
 cat > /etc/systemd/system/vault-mount.service <<SYSTEMD
@@ -225,13 +156,13 @@ Wants=network-online.target
 [Service]
 Type=notify
 User=${AGENT_USER}
-ExecStartPre=/bin/mkdir -p ${VAULT_LOCAL}
-ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${VAULT_LOCAL} \\
-  --vfs-cache-mode full \\
-  --vfs-cache-max-age 24h \\
-  --vfs-cache-max-size 500M \\
+ExecStartPre=/bin/mkdir -p ${HOST_VAULT}
+ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${HOST_VAULT} \
+  --vfs-cache-mode full \
+  --vfs-cache-max-age 24h \
+  --vfs-cache-max-size 500M \
   --log-level INFO
-ExecStop=/bin/fusermount -uz ${VAULT_LOCAL}
+ExecStop=/bin/fusermount -uz ${HOST_VAULT}
 Restart=on-failure
 RestartSec=10
 
@@ -241,531 +172,95 @@ SYSTEMD
 
 systemctl daemon-reload
 systemctl enable vault-mount.service
-# Start in background; don't block script if network not fully ready yet
-systemctl start vault-mount.service || warning "vault-mount.service start returned non-zero; it will retry automatically."
+systemctl start vault-mount.service || warning "vault-mount failed to start immediately."
 
-info "Waiting for vault mount to settle (up to 30s)..."
-for i in $(seq 1 6); do
-  sleep 5
-  if sudo -u "$AGENT_USER" test -d "$VAULT_LOCAL" && mountpoint -q "$VAULT_LOCAL"; then
-    info "Vault mounted successfully at ${VAULT_LOCAL}."
-    break
-  fi
-  echo "    ...waiting (${i}/6)"
-done
-mountpoint -q "$VAULT_LOCAL" || warning "Vault not yet mounted. Check: systemctl status vault-mount.service"
+# ── Hermes – Docker setup ─────────────────────────────────────────────────────
+info "Setting up Hermes Agent via Docker..."
 
-# Verify vault has AGENTS.md (check as agent user since FUSE mount is user-owned)
-if ! sudo -u "$AGENT_USER" test -f "${PERSONA_LOCAL}/AGENTS.md"; then
-  warning "AGENTS.md not found (${PERSONA_LOCAL}/AGENTS.md)."
-  warning "Make sure vault has been synced to R2 before this step (via Remotely Save on any device, or rclone copy from another machine)."
-  pause "Press Enter to continue anyway..."
-fi
+# Write docker-compose.yml (lives in repo root)
+COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
+cat > "$COMPOSE_FILE" <<COMPOSE
+services:
+  hermes:
+    image: ${HERMES_IMAGE}
+    container_name: hermes-agent
+    restart: unless-stopped
+    environment:
+      - OLLAMA_API_KEY="${OLLAMA_API_KEY}"
+      - DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
+      - DISCORD_ALLOWED_USERS="201941454946304001"
+      - DISCORD_HOME_CHANNEL="1486128557444042883"
+      - TZ="${TIMEZONE}"
+    volumes:
+      # Repo as /system – agent can read/write (e.g. iterate on skills and commit)
+      - ${REPO_WORKDIR}:/system
+      - ${REPO_WORKDIR}/.env:/opt/data/.env
+      - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
+      - ${REPO_WORKDIR}/skills:/opt/data/skills
+      # Agent home directory – persistent across restarts
+      # Vault – R2 artifact storage via host FUSE mount
+      - ${HOST_VAULT}:/vault
+      # Docker socket – optional, remove if agent doesn't need to spawn containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: host      # simplest for Ollama localhost access
+COMPOSE
+chown "${AGENT_USER}:${AGENT_USER}" "$COMPOSE_FILE"
 
-# ============================================================
-# 5. Install Node.js + Claude Code (native, not Docker)
-# ============================================================
-CLAUDE_CODE_VERSION="2.1.86"
+# ── systemd service (runs docker compose as agent user) ───────────────────────
+info "Installing Hermes systemd service..."
 
-info "Installing Node.js (via nvm)..."
-sudo -u "$AGENT_USER" bash -c '
-  export NVM_DIR="$HOME/.nvm"
-  if [ -s "$NVM_DIR/nvm.sh" ]; then
-    echo "    nvm already installed, skipping."
-  else
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-  fi
-  source "$NVM_DIR/nvm.sh"
-  if nvm ls --no-colors 2>/dev/null | grep -q "lts/"; then
-    echo "    Node.js LTS already installed, skipping."
-  else
-    nvm install --lts
-  fi
-  nvm use --lts
-'
+loginctl enable-linger "$AGENT_USER"
 
-info "Installing Claude Code@${CLAUDE_CODE_VERSION}..."
-sudo -u "$AGENT_USER" bash -c "
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
-  INSTALLED=\$(npm list -g --depth=0 2>/dev/null | grep '@anthropic-ai/claude-code' | grep -o '[0-9]*\.[0-9]*\.[0-9]*' || true)
-  if [ \"\$INSTALLED\" = \"${CLAUDE_CODE_VERSION}\" ]; then
-    echo '    Claude Code ${CLAUDE_CODE_VERSION} already installed, skipping.'
-  else
-    echo \"    Installing Claude Code ${CLAUDE_CODE_VERSION} (was: \${INSTALLED:-none})...\"
-    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-  fi
+cat > /etc/systemd/system/hermes-agent.service <<SYSTEMD
+[Unit]
+Description=Hermes Agent (Docker Compose)
+After=docker.service vault-mount.service network-online.target
+Requires=docker.service
+Wants=vault-mount.service network-online.target
 
-  # Fix missing execute bit on seccomp helper (required for sandbox to work)
-  SECCOMP_BIN=\"\$(npm root -g)/@anthropic-ai/claude-code/vendor/seccomp/x64/apply-seccomp\"
-  if [ -f \"\$SECCOMP_BIN\" ]; then
-    chmod +x \"\$SECCOMP_BIN\"
-    echo '    Fixed apply-seccomp execute bit.'
-  fi
-"
+[Service]
+Type=simple
+User=${AGENT_USER}
+WorkingDirectory=${REPO_WORKDIR}
+# Pull latest image before starting (remove if you pin a digest)
+ExecStartPre=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up --remove-orphans
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=15
 
-# Verify Claude Code version meets minimum requirement
-info "Verifying Claude Code version..."
-sudo -u "$AGENT_USER" bash -c '
-  export NVM_DIR="$HOME/.nvm"
-  source "$NVM_DIR/nvm.sh"
-  CLAUDE_VER=$(claude --version 2>/dev/null | grep -oP "\d+\.\d+\.\d+" | head -1)
-  echo "    Claude Code version: ${CLAUDE_VER}"
-  IFS="." read -r major minor patch <<< "$CLAUDE_VER"
-  if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 1 ]; } || \
-     { [ "$major" -eq 2 ] && [ "$minor" -eq 1 ] && [ "$patch" -lt 80 ]; }; then
-    echo "    Warning: Claude Code >= 2.1.80 is required for Discord plugin support."
-  else
-    echo "    Version OK (>= 2.1.80)."
-  fi
-'
+[Install]
+WantedBy=multi-user.target
+SYSTEMD
 
-# ============================================================
-# 6. Install Bun (required for Claude Code Channels plugins)
-# ============================================================
-info "Installing Bun..."
-sudo -u "$AGENT_USER" bash -c '
-  if command -v bun &>/dev/null || [ -f "$HOME/.bun/bin/bun" ]; then
-    echo "    Bun already installed ($(~/.bun/bin/bun --version 2>/dev/null || bun --version)), skipping."
-  else
-    curl -fsSL https://bun.sh/install | bash
-    echo "    Bun installed."
-  fi
+systemctl daemon-reload
+systemctl enable hermes-agent.service
+systemctl start hermes-agent.service || warning "hermes-agent failed to start immediately – check: journalctl -u hermes-agent"
 
-  # Ensure bun is in PATH for future sessions
-  if ! grep -q "\.bun/bin" $HOME/.bashrc 2>/dev/null; then
-    echo "export BUN_INSTALL=\"\$HOME/.bun\"" >> $HOME/.bashrc
-    echo "export PATH=\"\$BUN_INSTALL/bin:\$PATH\"" >> $HOME/.bashrc
-  fi
-'
-
-# ============================================================
-# 6.5 Install jj (Jujutsu VCS)
-# ============================================================
-info "Installing jj (Jujutsu VCS)..."
-
-sudo -u "$AGENT_USER" bash -c '
-  if [ -f "$HOME/.local/bin/jj" ]; then
-    echo "    jj already installed ($($HOME/.local/bin/jj --version)), skipping."
-  else
-    JJ_VERSION=$(curl -s https://api.github.com/repos/jj-vcs/jj/releases/latest \
-      | grep -o "\"tag_name\": \"v[^\"]*\"" | cut -d"\"" -f4)
-    JJ_VERSION=${JJ_VERSION:-v0.40.0}
-    mkdir -p $HOME/.local/bin
-    curl -sL "https://github.com/jj-vcs/jj/releases/download/${JJ_VERSION}/jj-${JJ_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-      | tar -xz --no-same-permissions -C /tmp ./jj
-    mv /tmp/jj $HOME/.local/bin/jj
-    echo "    jj ${JJ_VERSION} installed."
-  fi
-
-  if ! grep -q ".local/bin" $HOME/.bashrc 2>/dev/null; then
-    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> $HOME/.bashrc
-  fi
-'
-
-# Configure jj identity and initialize colocated repo
-sudo -u "$AGENT_USER" bash -c "
-  export PATH=\"\$HOME/.local/bin:\$PATH\"
-
-  # Mirror git global identity into jj config
-  GIT_NAME=\$(git config --global user.name 2>/dev/null || echo 'Laura')
-  GIT_EMAIL=\$(git config --global user.email 2>/dev/null || echo 'laura@my-claw')
-  jj config set --user user.name \"\$GIT_NAME\" 2>/dev/null || true
-  jj config set --user user.email \"\$GIT_EMAIL\" 2>/dev/null || true
-
-  cd ${AGENT_WORKDIR}
-
-  if [ -d '.jj' ]; then
-    echo '    jj colocated repo already initialized, skipping.'
-  else
-    jj git init --colocate 2>&1 | grep -v '^Hint:'
-    jj bookmark track main --remote=origin 2>/dev/null || true
-    echo '    jj colocated repo initialized.'
-  fi
-
-  # Protect .jj from git clean -xdf
-  if ! grep -q '\.jj' .gitignore 2>/dev/null; then
-    echo '.jj' >> .gitignore
-    echo '    Added .jj to .gitignore.'
-  fi
-"
-
-info "jj ready."
-
-# ============================================================
-# 7. Configure Claude Code auth (OAuth Token)
-# ============================================================
-info "Setting up Claude Code authentication..."
-sudo -u "$AGENT_USER" bash -c "
-  mkdir -p \$HOME/.claude
-
-  # Skip onboarding prompt
-  cat > \$HOME/.claude.json <<'CLAUDEJSON'
-{
-  \"hasCompletedOnboarding\": true
-}
-CLAUDEJSON
-  chmod 600 \$HOME/.claude.json
-
-  if ! grep -q 'CLAUDE_CODE_OAUTH_TOKEN' \$HOME/.bashrc 2>/dev/null; then
-    echo 'export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"' >> \$HOME/.bashrc
-  else
-    sed -i 's|^export CLAUDE_CODE_OAUTH_TOKEN=.*|export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"|' \$HOME/.bashrc
-  fi
-
-  if ! grep -q 'OLLAMA_API_KEY' \$HOME/.bashrc 2>/dev/null; then
-    echo 'export OLLAMA_API_KEY=\"${OLLAMA_API_KEY}\"' >> \$HOME/.bashrc
-  else
-    sed -i 's|^export OLLAMA_API_KEY=.*|export OLLAMA_API_KEY=\"${OLLAMA_API_KEY}\"|' \$HOME/.bashrc
-  fi
-
-  if ! grep -q '^export TZ=' \$HOME/.bashrc 2>/dev/null; then
-    echo 'export TZ=\"${TIMEZONE}\"' >> \$HOME/.bashrc
-  else
-    sed -i 's|^export TZ=.*|export TZ=\"${TIMEZONE}\"|' \$HOME/.bashrc
-  fi
-"
-
-# ============================================================
-# 7.2 Install MCP server dependencies
-# ============================================================
-info "Installing MCP server dependencies..."
-
-sudo -u "$AGENT_USER" bash -c "
-  export BUN_INSTALL=\"\$HOME/.bun\"
-  export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
-
-  cd ${AGENT_WORKDIR}/mcp-servers/memory && bun install --frozen-lockfile
-  echo '    Memory server deps installed.'
-"
-
-info "MCP deps installed. Config is in .mcp.json (checked into repo)."
-
-# ============================================================
-# 7.3 Install Playwright + Chromium (for fetch-external MCP)
-# ============================================================
-info "Installing Playwright MCP + Chromium..."
-
-# Install @playwright/mcp locally so .mcp.json can reference node_modules/.bin/playwright-mcp
-sudo -u "$AGENT_USER" bash -c "
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
-  cd ${AGENT_WORKDIR}
-  if [ -d 'node_modules/@playwright/mcp' ]; then
-    echo '    @playwright/mcp already installed, skipping.'
-  else
-    npm install @playwright/mcp
-    echo '    @playwright/mcp installed.'
-  fi
-"
-
-# Install Chromium system dependencies (requires root)
-AGENT_NODE=$(sudo -u "$AGENT_USER" bash -c 'export NVM_DIR="$HOME/.nvm"; source "$NVM_DIR/nvm.sh"; which node')
-PLAYWRIGHT_BIN="${AGENT_WORKDIR}/node_modules/.bin/playwright"
-if [ -f "$PLAYWRIGHT_BIN" ]; then
-  DEBIAN_FRONTEND=noninteractive "$AGENT_NODE" "$PLAYWRIGHT_BIN" install-deps chromium
-  info "Chromium system deps installed."
-else
-  warning "playwright binary not found at ${PLAYWRIGHT_BIN}, skipping install-deps."
-fi
-
-# Download Chromium browser binary (as agent user, stored in ~/.cache/ms-playwright/)
-sudo -u "$AGENT_USER" bash -c "
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
-  cd ${AGENT_WORKDIR}
-  node node_modules/.bin/playwright install chromium
-  echo '    Chromium browser binary downloaded.'
-"
-
-info "Playwright + Chromium ready."
-
-# ============================================================
-# 7.4 GitHub integration (optional: GH_TOKEN + GPG signing)
-# ============================================================
-info "GitHub integration (auto-detect from GH_TOKEN)..."
-
-GPG_KEY_PATH="${PERSONA_LOCAL}/laura-bot.gpg.asc"
-
-# GH_TOKEN present → enable (GPG key will be imported from vault if it exists,
-# or generated fresh and saved to vault on first deploy).
-# GH_TOKEN absent → skip entirely.
-if [[ -n "${GH_TOKEN:-}" ]]; then
-  setup_github="y"
-else
-  setup_github="n"
-  warning "GitHub integration disabled (GH_TOKEN not set)."
-fi
-
-if [[ "$setup_github" == "y" ]]; then
-
-  # Resolve GitHub account primary email
-  GPG_EMAIL=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
-    https://api.github.com/user/emails | \
-    jq -r '[.[] | select(.primary == true and .verified == true)] | .[0].email')
-  if [[ -z "$GPG_EMAIL" || "$GPG_EMAIL" == "null" ]]; then
-    error "Could not resolve a verified primary email from GitHub. Check GH_TOKEN scope (needs user:email or read:user)."
-  fi
-  info "Using GitHub email for GPG key: ${GPG_EMAIL}"
-
-  sudo -u "$AGENT_USER" bash -c "
-    GPG_KEY_PATH='${GPG_KEY_PATH}'
-    GPG_EMAIL='${GPG_EMAIL}'
-
-    if [ -f \"\$GPG_KEY_PATH\" ]; then
-      echo '    Importing existing Laura bot GPG key from vault...'
-      gpg --batch --import \"\$GPG_KEY_PATH\"
-    else
-      echo '    Generating new Laura bot GPG key...'
-      gpg --batch --gen-key <<GPGBATCH
-%no-protection
-Key-Type: EdDSA
-Key-Curve: ed25519
-Name-Real: Laura
-Name-Email: ${GPG_EMAIL}
-Expire-Date: 0
-GPGBATCH
-      KEY_ID=\$(gpg --list-secret-keys --keyid-format LONG \"\$GPG_EMAIL\" 2>/dev/null | grep '^sec' | awk '{print \$2}' | cut -d'/' -f2 | head -1)
-      mkdir -p \"\$(dirname \"\$GPG_KEY_PATH\")\"
-      gpg --armor --export-secret-keys \"\$KEY_ID\" > \"\$GPG_KEY_PATH\"
-      echo \"    Key exported to vault: \$GPG_KEY_PATH\"
-    fi
-
-    KEY_ID=\$(gpg --list-secret-keys --keyid-format LONG \"\$GPG_EMAIL\" 2>/dev/null | grep '^sec' | awk '{print \$2}' | cut -d'/' -f2 | head -1)
-    git config --global user.signingkey \"\$KEY_ID\"
-    git config --global commit.gpgsign true
-    git config --global gpg.program gpg
-    echo \"    Git signing configured with key: \$KEY_ID\"
-
-    if ! grep -q 'GH_TOKEN' \$HOME/.bashrc 2>/dev/null; then
-      echo 'export GH_TOKEN=\"${GH_TOKEN}\"' >> \$HOME/.bashrc
-    else
-      sed -i 's|^export GH_TOKEN=.*|export GH_TOKEN=\"${GH_TOKEN}\"|' \$HOME/.bashrc
-    fi
-    echo '    GH_TOKEN persisted to .bashrc'
-  "
-
-  info "GitHub integration enabled."
-else
-  warning "Skipping GitHub integration. GitHub skill will be disabled."
-fi
-
-# ============================================================
-# 7.5 Configure Claude Code Hooks
-# ============================================================
-info "Configuring Claude Code hooks..."
-
-HOOKS_DIR="${AGENT_WORKDIR}/hooks"
-
-find "$HOOKS_DIR" -name "*.sh" -exec chmod +x {} \;
-chown -R "${AGENT_USER}:${AGENT_USER}" "$HOOKS_DIR"
-
-sudo -u "$AGENT_USER" bash -c "
-  GLOBAL_SETTINGS=\"\$HOME/.claude/settings.json\"
-  mkdir -p \$HOME/.claude
-
-  if [ ! -f \"\$GLOBAL_SETTINGS\" ]; then
-    echo '{}' > \"\$GLOBAL_SETTINGS\"
-  fi
-
-  # 清除舊的 hooks 區塊，避免重複執行時重複註冊
-  jq 'del(.hooks)' \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
-  mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
-
-  # 依資料夾名稱排序，逐一讀取 claude_event_name 並註冊 on-event.sh
-  find '${HOOKS_DIR}' -mindepth 1 -maxdepth 1 -type d | sort | while read -r hook_dir; do
-    EVENT_FILE=\"\${hook_dir}/claude_event_name\"
-
-    if [ ! -f \"\$EVENT_FILE\" ]; then
-      echo \"    Skipping \$(basename \$hook_dir): no claude_event_name found\"
-      continue
-    fi
-
-    EVENT=\$(cat \"\$EVENT_FILE\" | tr -d '[:space:]')
-    SCRIPT=\"\${hook_dir}/on-event.sh\"
-
-    if [ ! -f \"\$SCRIPT\" ]; then
-      echo \"    Skipping [\${EVENT}]: on-event.sh not found in \$(basename \$hook_dir)\"
-      continue
-    fi
-
-    jq \".hooks.\${EVENT} += [{\\\"hooks\\\": [{\\\"type\\\": \\\"command\\\", \\\"command\\\": \\\"\$SCRIPT\\\"}]}]\" \
-      \"\$GLOBAL_SETTINGS\" > /tmp/claude-settings-merged.json
-    mv /tmp/claude-settings-merged.json \"\$GLOBAL_SETTINGS\"
-    echo \"    Registered [\${EVENT}]: \$SCRIPT\"
-  done
-
-  chmod 600 \"\$GLOBAL_SETTINGS\"
-"
-
-info "hooks installed."
-
-# ============================================================
-# 8. Install Discord Channels plugin
-# ============================================================
-info "Installing Discord Channels plugin..."
-
-# Write Discord bot token to Claude channels config
-sudo -u "$AGENT_USER" bash -c "
-  mkdir -p \$HOME/.claude/channels/discord
-  cat > \$HOME/.claude/channels/discord/.env <<EOF
-DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-EOF
-  chmod 600 \$HOME/.claude/channels/discord/.env
-"
-
-# Install via marketplace (handles clone + bun install + config registration)
-sudo -u "$AGENT_USER" bash -c "
-  export NVM_DIR=\"\$HOME/.nvm\"
-  source \"\$NVM_DIR/nvm.sh\"
-  export BUN_INSTALL=\"\$HOME/.bun\"
-  export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
-  export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"
- 
-  claude plugin marketplace add anthropics/claude-plugins-official
-  claude plugin install discord@claude-plugins-official
-"
-
-info "Discord plugin installed."
-
-# ============================================================
-# 9. Write CLAUDE.md (repo root, points to vault AGENTS.md)
-# ============================================================
-info "Writing CLAUDE.md..."
-
-cat > "${AGENT_WORKDIR}/CLAUDE.md" <<'CLAUDEMD'
+# ── BOOTSTRAP.md ──────────────────────────────────────────────────────────────
+info "Writing BOOTSTRAP.md..."
+cat > "${REPO_WORKDIR}/BOOTSTRAP.md" <<BOOTSTRAPMD
 # Bootstrap
-
 Before doing anything else, read the full contents of
-${PERSONA_LOCAL}/AGENTS.md and follow all
+/vault/00-Laura-Persona/AGENTS.md and follow all
 instructions within it.
-
 Do not proceed until you have read that file.
-CLAUDEMD
-sed -i "s|\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/CLAUDE.md"
+BOOTSTRAPMD
+chown "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}/BOOTSTRAP.md"
 
-chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/CLAUDE.md"
-
-# ============================================================
-# 10. tmux startup script
-# ============================================================
-info "Writing tmux startup script..."
-
-cat > "${AGENT_WORKDIR}/start-agent.sh" <<'STARTSCRIPT'
-#!/bin/bash
-# Start Claude Code assistant in a persistent tmux session
-# Usage: bash start-agent.sh
-
-# Resolve script's own directory so it works regardless of cwd
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-export NVM_DIR="$HOME/.nvm"
-source "$NVM_DIR/nvm.sh"
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
-export TZ="$TIMEZONE"
-
-# Resolve absolute path to claude so tmux shell doesn't need nvm in PATH
-CLAUDE_BIN="$(which claude)"
-if [ -z "$CLAUDE_BIN" ]; then
-  echo "Error: claude binary not found. Is nvm/node installed?"
-  exit 1
-fi
-
-SESSION="assistant"
-
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "Session '$SESSION' already running. Attaching..."
-  tmux attach -t "$SESSION"
-else
-  echo "Starting new Claude Code session..."
-  tmux new-session -d -s "$SESSION" -x 220 -y 50 \
-    -e "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" \
-    -e "TZ=$TZ"
-  tmux send-keys -t "$SESSION" "cd ${SCRIPT_DIR} && ${CLAUDE_BIN} --channels plugin:discord@claude-plugins-official --dangerously-skip-permissions" Enter
-  echo "Session started. Attaching..."
-  tmux attach -t "$SESSION"
-fi
-STARTSCRIPT
-
-chmod +x "${AGENT_WORKDIR}/start-agent.sh"
-chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/start-agent.sh"
-
-# Install tmux if not present
-if ! command -v tmux &>/dev/null; then
-  info "Installing tmux..."
-  apt-get "${APT_OPTS[@]}" install -y tmux -qq
-fi
-
-# ============================================================
-# 11. AppArmor profile for bubblewrap (Ubuntu 24.04+)
-# ============================================================
-info "Configuring AppArmor profile for bubblewrap..."
-# Ubuntu 24.04 restricts unprivileged user namespaces by default.
-# bwrap requires a profile granting 'userns' permission to function.
-if sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null | grep -q "1"; then
-  cat > /etc/apparmor.d/bwrap <<'AAPROFILE'
-abi <abi/4.0>,
-include <tunables/global>
-
-/usr/bin/bwrap flags=(unconfined) {
-  userns,
-}
-AAPROFILE
-  apparmor_parser -r /etc/apparmor.d/bwrap
-  info "AppArmor profile for bwrap loaded."
-else
-  info "AppArmor userns restriction not active, skipping."
-fi
-
-# ============================================================
-# 12. Crontab
-# ============================================================
-info "Installing crontab for ${AGENT_USER}..."
-sudo -u "${AGENT_USER}" bash -c '
-  REPO="$HOME/my-claw"
-  (crontab -l 2>/dev/null | grep -v "daily-summary\|midnight-archive\|weekly-ingest\|nz-news-digest"; echo "TZ=UTC"; echo "3 1 * * * /bin/bash $REPO/scripts/daily-summary.sh >> /tmp/daily-summary-cron.log 2>&1"; echo "50 23 * * * /bin/bash $REPO/scripts/midnight-archive.sh >> /tmp/midnight-archive.log 2>&1"; echo "0 3 * * 0 /bin/bash $REPO/scripts/weekly-ingest.sh >> /tmp/weekly-ingest-cron.log 2>&1"; echo "0 20 * * * /bin/bash $REPO/scripts/nz-news-digest.sh >> /tmp/nz-news-digest.log 2>&1") | crontab -
-'
-info "Crontab installed."
-
-# ============================================================
-# 13. Firewall
-# ============================================================
+# ── Firewall ──────────────────────────────────────────────────────────────────
 info "Configuring firewall..."
 if command -v ufw &>/dev/null; then
   ufw allow OpenSSH
   ufw --force enable
-  info "UFW configured. rclone R2 uses outbound HTTPS only — no inbound ports needed."
-else
-  warning "ufw not found, skipping firewall setup."
 fi
 
-# ============================================================
-# Done!
-# ============================================================
-echo ""
+# ── Done ─────────────────────────────────────────────────────────────────────
 echo "========================================================"
 echo -e "${GREEN}✅ Setup complete!${NC}"
 echo ""
-echo "Next steps:"
-echo ""
-echo "  1. SSH into the VPS as ${AGENT_USER}:"
-echo "     ssh ${AGENT_USER}@<your-vps-ip>"
-echo ""
-echo "  2. Start the assistant:"
-echo "     bash ~/${AGENT_WORKDIR##*/}/start-agent.sh"
-echo ""
-echo "  3. Pair your Discord account:"
-echo "     DM your bot → get a pairing code → type it in Claude Code"
-echo "     tmux attach -t assistant"
-echo "     /discord:access pair <code>"
-echo "     /discord:access policy allowlist"
-echo ""
-echo "  4. Verify vault is mounted:"
-echo "     mountpoint ~/vault && ls ~/vault/"
-echo ""
-echo "  5. (Optional) Disable root SSH after confirming ${AGENT_USER} can login:"
-echo "     sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config"
-echo "     systemctl restart sshd"
-echo ""
-echo "========================================================"
+echo "  Hermes container:  sudo systemctl status hermes-agent"
+echo "  Live logs:         journalctl -u hermes-agent -f"
+echo "  Compose dir:       ${REPO_WORKDIR}"
+echo "  Vault mount:       ${HOST_VAULT}"
+echo "========================================================="
