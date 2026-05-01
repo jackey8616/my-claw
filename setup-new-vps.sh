@@ -67,7 +67,7 @@ OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone")
 
 # Docker image for Hermes Agent – override via env if you use a private registry
-HERMES_IMAGE="${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}"
+HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
 
 HOST_AGENT_HOME="/home/${AGENT_USER}"
 HOST_VAULT="${HOST_AGENT_HOME}/vault"
