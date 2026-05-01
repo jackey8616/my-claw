@@ -55,6 +55,7 @@ load_env() {
   echo "$val"
 }
 
+# ── Configuration ────────────────────────────────────────────────────────────
 info "Loading configuration..."
 AGENT_USER=$(load_env "AGENT_USER" "dedicated user name")
 R2_ACCOUNT_ID=$(load_env "R2_ACCOUNT_ID" "Cloudflare Account ID")
@@ -63,29 +64,36 @@ R2_SECRET_ACCESS_KEY=$(load_env "R2_SECRET_ACCESS_KEY" "R2 API Token Secret Acce
 R2_BUCKET_NAME=$(load_env "R2_BUCKET_NAME" "R2 bucket name")
 DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key")
-GH_TOKEN=$(load_env "GH_TOKEN" "GitHub Token")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone")
 
-AGENT_HOME="/home/${AGENT_USER}"
-VAULT_LOCAL="${AGENT_HOME}/vault"
-PERSONA_LOCAL="${AGENT_HOME}/vault/00-Laura-Persona"
-WORKDIR=$(pwd)
-AGENT_WORKDIR="${AGENT_HOME}/$(basename $WORKDIR)"
+# Docker image for Hermes Agent – override via env if you use a private registry
+HERMES_IMAGE="${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}"
 
+HOST_AGENT_HOME="/home/${AGENT_USER}"
+HOST_VAULT="${HOST_AGENT_HOME}/vault"
+WORKDIR=$(pwd)
+REPO_WORKDIR="${HOST_AGENT_HOME}/$(basename "$WORKDIR")"
+
+# ── User ─────────────────────────────────────────────────────────────────────
 info "Creating agent user: ${AGENT_USER}"
 if id "$AGENT_USER" &>/dev/null; then
   warning "User ${AGENT_USER} already exists."
 else
   useradd -m -s /bin/bash "$AGENT_USER"
-  mkdir -p "$AGENT_HOME"
-  chown "${AGENT_USER}:${AGENT_USER}" "$AGENT_HOME"
+  chown "${AGENT_USER}:${AGENT_USER}" "$HOST_AGENT_HOME"
 fi
 
-info "Updating System..."
-apt-get "${APT_OPTS[@]}" update -qq && apt-get "${APT_OPTS[@]}" upgrade -y -qq
+# ── System packages ───────────────────────────────────────────────────────────
+info "Updating system..."
+apt-get "${APT_OPTS[@]}" update -qq
+apt-get "${APT_OPTS[@]}" upgrade -y -qq
 
+info "Installing base packages..."
+apt-get "${APT_OPTS[@]}" install -y -qq \
+  unzip jq curl fuse3
+
+# ── Docker ────────────────────────────────────────────────────────────────────
 info "Installing Docker..."
-apt-get "${APT_OPTS[@]}" install -y -qq unzip jq bubblewrap socat uidmap gnupg
 if command -v docker &>/dev/null; then
   warning "Docker already installed."
 else
@@ -93,10 +101,7 @@ else
 fi
 usermod -aG docker "$AGENT_USER"
 
-info "Installing gh CLI..."
-if ! command -v gh &>/dev/null; then
-  type -p curl >/dev/null && curl -fsSL https://github.com/cli/cli/install.sh | sh
-fi
+# ── Ollama ────────────────────────────────────────────────────────────────────
 info "Installing Ollama..."
 if command -v ollama &>/dev/null; then
   warning "Ollama already installed."
@@ -105,13 +110,15 @@ else
   systemctl enable --now ollama
 fi
 
-info "Moving workdir to ${AGENT_WORKDIR}..."
-if [ "$WORKDIR" != "$AGENT_WORKDIR" ]; then
-  mv "$WORKDIR" "$AGENT_WORKDIR"
-  chown -R "${AGENT_USER}:${AGENT_USER}" "$AGENT_WORKDIR"
+# ── Move workdir ──────────────────────────────────────────────────────────────
+info "Moving workdir to ${REPO_WORKDIR}..."
+if [ "$WORKDIR" != "$REPO_WORKDIR" ]; then
+  mv "$WORKDIR" "$REPO_WORKDIR"
+  chown -R "${AGENT_USER}:${AGENT_USER}" "$REPO_WORKDIR"
 fi
-export WORKDIR="$AGENT_WORKDIR"
+export WORKDIR="$REPO_WORKDIR"
 
+# ── rclone ────────────────────────────────────────────────────────────────────
 info "Installing rclone..."
 if command -v rclone &>/dev/null; then
   warning "rclone already installed."
@@ -134,99 +141,126 @@ RCLONECONF
   chmod 600 \$HOME/.config/rclone/rclone.conf
 "
 
+# ── Vault FUSE mount ──────────────────────────────────────────────────────────
 info "Setting up vault mount..."
-mkdir -p "$VAULT_LOCAL"
-apt-get "${APT_OPTS[@]}" install -y -qq fuse3
-chown -R "${AGENT_USER}:${AGENT_USER}" "$VAULT_LOCAL"
+mkdir -p "$HOST_VAULT"
+chown -R "${AGENT_USER}:${AGENT_USER}" "$HOST_VAULT"
+
 RCLONE_BIN=$(which rclone)
 cat > /etc/systemd/system/vault-mount.service <<SYSTEMD
 [Unit]
 Description=rclone R2 vault FUSE mount
 After=network-online.target
 Wants=network-online.target
+
 [Service]
 Type=notify
 User=${AGENT_USER}
-ExecStartPre=/bin/mkdir -p ${VAULT_LOCAL}
-ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${VAULT_LOCAL} --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 500M --log-level INFO
-ExecStop=/bin/fusermount -uz ${VAULT_LOCAL}
+ExecStartPre=/bin/mkdir -p ${HOST_VAULT}
+ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${HOST_VAULT} \
+  --vfs-cache-mode full \
+  --vfs-cache-max-age 24h \
+  --vfs-cache-max-size 500M \
+  --log-level INFO
+ExecStop=/bin/fusermount -uz ${HOST_VAULT}
 Restart=on-failure
 RestartSec=10
+
 [Install]
 WantedBy=multi-user.target
 SYSTEMD
+
 systemctl daemon-reload
 systemctl enable vault-mount.service
 systemctl start vault-mount.service || warning "vault-mount failed to start immediately."
 
-info "Installing Hermes Agent dependencies..."
-apt-get "${APT_OPTS[@]}" install -y -qq python3-pip python3-venv git ripgrep
+# ── Hermes – Docker setup ─────────────────────────────────────────────────────
+info "Setting up Hermes Agent via Docker..."
 
-info "Setting up Hermes Agent (Headless)..."
-sudo -u "$AGENT_USER" bash -c '
-  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup
-  source ~/.bashrc
-'
+# Write docker-compose.yml (lives in repo root)
+COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
+cat > "$COMPOSE_FILE" <<COMPOSE
+services:
+  hermes:
+    image: ${HERMES_IMAGE}
+    container_name: hermes-agent
+    restart: unless-stopped
+    environment:
+      - OLLAMA_API_KEY="${OLLAMA_API_KEY}"
+      - DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
+      - DISCORD_ALLOWED_USERS="201941454946304001"
+      - DISCORD_HOME_CHANNEL="1486128557444042883"
+      - TZ="${TIMEZONE}"
+    volumes:
+      # Repo as /system – agent can read/write (e.g. iterate on skills and commit)
+      - ${REPO_WORKDIR}:/system
+      - ${REPO_WORKDIR}/.env:/opt/data/.env
+      - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
+      - ${REPO_WORKDIR}/skills:/opt/data/skills
+      # Agent home directory – persistent across restarts
+      # Vault – R2 artifact storage via host FUSE mount
+      - ${HOST_VAULT}:/vault
+      # Docker socket – optional, remove if agent doesn't need to spawn containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: host      # simplest for Ollama localhost access
+COMPOSE
+chown "${AGENT_USER}:${AGENT_USER}" "$COMPOSE_FILE"
 
-info "Patching .env file..."
-DOTENV_PATH="${AGENT_HOME}/.hermes/.env"
+# ── systemd service (runs docker compose as agent user) ───────────────────────
+info "Installing Hermes systemd service..."
 
-sed -i "s|^# GITHUB_TOKEN=.*|GH_TOKEN=\"${GH_TOKEN}\"|" "$DOTENV_PATH"
-sed -i "s|^# OLLAMA_API_KEY=.*|OLLAMA_API_KEY=\"${OLLAMA_API_KEY}\"|" "$DOTENV_PATH"
+loginctl enable-linger "$AGENT_USER"
 
-if ! grep -q "DISCORD_BOT_TOKEN" "$DOTENV_PATH"; then
-cat >> "$DOTENV_PATH" <<EOF
+cat > /etc/systemd/system/hermes-agent.service <<SYSTEMD
+[Unit]
+Description=Hermes Agent (Docker Compose)
+After=docker.service vault-mount.service network-online.target
+Requires=docker.service
+Wants=vault-mount.service network-online.target
 
-# Discord Settings
-DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
-DISCORD_ALLOWED_USERS="clooooode"
-DISCORD_HOME_CHANNEL="1486128557444042883"
-EOF
-fi
+[Service]
+Type=simple
+User=${AGENT_USER}
+WorkingDirectory=${REPO_WORKDIR}
+# Pull latest image before starting (remove if you pin a digest)
+ExecStartPre=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up --remove-orphans
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=15
 
-chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
-chmod 600 "$DOTENV_PATH"
+[Install]
+WantedBy=multi-user.target
+SYSTEMD
 
-info "Migrating legacy skills..."
-sudo -u "$AGENT_USER" bash -c "
-  mkdir -p \$HOME/.hermes/skills
-  if [ -d '${AGENT_WORKDIR}/.claude/skills' ]; then
-    cp -r ${AGENT_WORKDIR}/.claude/skills/* \$HOME/.hermes/skills/
-  fi
-  chown -R \$USER:\$USER \$HOME/.hermes/skills
-"
+systemctl daemon-reload
+systemctl enable hermes-agent.service
+systemctl start hermes-agent.service || warning "hermes-agent failed to start immediately – check: journalctl -u hermes-agent"
 
+# ── BOOTSTRAP.md ──────────────────────────────────────────────────────────────
 info "Writing BOOTSTRAP.md..."
-cat > "${AGENT_WORKDIR}/BOOTSTRAP.md" <<'CLAUDEMD'
+cat > "${REPO_WORKDIR}/BOOTSTRAP.md" <<BOOTSTRAPMD
 # Bootstrap
 Before doing anything else, read the full contents of
-${PERSONA_LOCAL}/AGENTS.md and follow all
+/vault/00-Laura-Persona/AGENTS.md and follow all
 instructions within it.
 Do not proceed until you have read that file.
-CLAUDEMD
-sed -i "s|\\${PERSONA_LOCAL}|${PERSONA_LOCAL}|g" "${AGENT_WORKDIR}/BOOTSTRAP.md"
-chown "${AGENT_USER}:${AGENT_USER}" "${AGENT_WORKDIR}/BOOTSTRAP.md"
+BOOTSTRAPMD
+chown "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}/BOOTSTRAP.md"
 
-info "Installing and configuring Hermes Gateway service..."
-loginctl enable-linger "$AGENT_USER"
-AGENT_VENV_BIN="/home/${AGENT_USER}/.hermes/hermes-agent/venv/bin"
-sudo -u "$AGENT_USER" bash -c "
-  ${AGENT_VENV_BIN}/hermes gateway install
-  ${AGENT_VENV_BIN}/hermes gateway start
-"
-
-info "Installing crontab..."
-sudo -u "$AGENT_USER" bash -c '
-  REPO="$HOME/my-claw"
-  (crontab -l 2>/dev/null | grep -v "daily-summary\|midnight-archive\|weekly-ingest\|nz-news-digest"; echo "TZ=UTC"; echo "3 1 * * * /bin/bash $REPO/scripts/daily-summary.sh >> /tmp/daily-summary-cron.log 2>&1"; echo "50 23 * * * /bin/bash $REPO/scripts/midnight-archive.sh >> /tmp/midnight-archive.log 2>&1"; echo "0 3 * * 0 /bin/bash $REPO/scripts/weekly-ingest.sh >> /tmp/weekly-ingest-cron.log 2>&1"; echo "0 20 * * * /bin/bash $REPO/scripts/nz-news-digest.sh >> /tmp/nz-news-digest.log 2>&1") | crontab -
-'
-
+# ── Firewall ──────────────────────────────────────────────────────────────────
 info "Configuring firewall..."
 if command -v ufw &>/dev/null; then
   ufw allow OpenSSH
   ufw --force enable
 fi
 
+# ── Done ─────────────────────────────────────────────────────────────────────
 echo "========================================================"
 echo -e "${GREEN}✅ Setup complete!${NC}"
+echo ""
+echo "  Hermes container:  sudo systemctl status hermes-agent"
+echo "  Live logs:         journalctl -u hermes-agent -f"
+echo "  Compose dir:       ${REPO_WORKDIR}"
+echo "  Vault mount:       ${HOST_VAULT}"
 echo "========================================================="
