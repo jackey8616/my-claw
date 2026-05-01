@@ -92,6 +92,10 @@ info "Installing base packages..."
 apt-get "${APT_OPTS[@]}" install -y -qq \
   unzip jq curl fuse3
 
+# Allow FUSE mounts to be visible to other users (e.g. Docker daemon running as root)
+info "Configuring FUSE..."
+sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
+
 # ── Docker ────────────────────────────────────────────────────────────────────
 info "Installing Docker..."
 if command -v docker &>/dev/null; then
@@ -161,6 +165,7 @@ ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${HOST_VAULT} \
   --vfs-cache-mode full \
   --vfs-cache-max-age 24h \
   --vfs-cache-max-size 500M \
+  --allow-other \
   --log-level INFO
 ExecStop=/bin/fusermount -uz ${HOST_VAULT}
 Restart=on-failure
@@ -172,10 +177,15 @@ SYSTEMD
 
 systemctl daemon-reload
 systemctl enable vault-mount.service
-systemctl start vault-mount.service || warning "vault-mount failed to start immediately."
+fusermount -uz "$HOST_VAULT" 2>/dev/null || true
+systemctl restart vault-mount.service || warning "vault-mount failed to start immediately."
 
 # ── Hermes – Docker setup ─────────────────────────────────────────────────────
 info "Setting up Hermes Agent via Docker..."
+
+mkdir -p "${REPO_WORKDIR}/skills"
+chmod -R 777 "${REPO_WORKDIR}/skills"
+chown -R "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}"
 
 # Write docker-compose.yml (lives in repo root)
 COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
@@ -185,6 +195,7 @@ services:
     image: ${HERMES_IMAGE}
     container_name: hermes-agent
     restart: unless-stopped
+    command: gateway run
     environment:
       - OLLAMA_API_KEY="${OLLAMA_API_KEY}"
       - DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
@@ -192,17 +203,11 @@ services:
       - DISCORD_HOME_CHANNEL="1486128557444042883"
       - TZ="${TIMEZONE}"
     volumes:
-      # Repo as /system – agent can read/write (e.g. iterate on skills and commit)
-      - ${REPO_WORKDIR}:/system
-      - ${REPO_WORKDIR}/.env:/opt/data/.env
       - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
       - ${REPO_WORKDIR}/skills:/opt/data/skills
-      # Agent home directory – persistent across restarts
-      # Vault – R2 artifact storage via host FUSE mount
       - ${HOST_VAULT}:/vault
-      # Docker socket – optional, remove if agent doesn't need to spawn containers
       - /var/run/docker.sock:/var/run/docker.sock
-    network_mode: host      # simplest for Ollama localhost access
+    network_mode: host
 COMPOSE
 chown "${AGENT_USER}:${AGENT_USER}" "$COMPOSE_FILE"
 
@@ -221,8 +226,8 @@ Wants=vault-mount.service network-online.target
 [Service]
 Type=simple
 User=${AGENT_USER}
+SupplementaryGroups=docker
 WorkingDirectory=${REPO_WORKDIR}
-# Pull latest image before starting (remove if you pin a digest)
 ExecStartPre=/usr/bin/docker compose pull --quiet
 ExecStart=/usr/bin/docker compose up --remove-orphans
 ExecStop=/usr/bin/docker compose down
@@ -235,7 +240,7 @@ SYSTEMD
 
 systemctl daemon-reload
 systemctl enable hermes-agent.service
-systemctl start hermes-agent.service || warning "hermes-agent failed to start immediately – check: journalctl -u hermes-agent"
+systemctl restart hermes-agent.service || warning "hermes-agent failed to start – check: journalctl -u hermes-agent"
 
 # ── BOOTSTRAP.md ──────────────────────────────────────────────────────────────
 info "Writing BOOTSTRAP.md..."
