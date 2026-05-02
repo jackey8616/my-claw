@@ -8,12 +8,15 @@ allowed-tools: Bash Read
 
 ## 提交機制說明
 
-本 skill 使用 **jj（Jujutsu）** 管理本地提交。工作流程分兩層：
+本 skill 預設使用 **jj（Jujutsu）** 管理本地提交。但在某些環境中（例如缺乏 jj 或需要直接操作 git 時），可使用原生 `git` 工作流：
 
 - **jj 層**：commit 整理（split / squash / describe / bookmark）
-- **git 層**：網路操作（push 到 remote、GitHub API）
+- **git 層**：網路操作（push 到 remote、GitHub API）以及在缺乏 jj 時的直接提交 (`git add` / `git commit`)。
 
-不使用 `git add` 或 `git commit`。
+**提交原則：**
+- 必須符合 [Conventional Commits](https://www.conventionalcommits.org/) 規範。
+- 若環境支持 GPG，應優先使用 `-S` 進行簽名。
+- 缺乏 GPG 時，可考慮配置 `gpg.format = ssh` 使用 SSH Key 簽名。
 
 ---
 
