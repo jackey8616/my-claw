@@ -71,11 +71,10 @@ HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
 
 HOST_AGENT_HOME="/home/${AGENT_USER}"
 HOST_VAULT="${HOST_AGENT_HOME}/vault"
-HOST_BIND_CONTAINER_HOME_DIR="${HOST_AGENT_HOME}/container-home"
 WORKDIR=$(pwd)
-REPO_WORKDIR="${HOST_AGENT_HOME}/$(basename "$WORKDIR")"
-PERSONA_VAULT_DIR="${HOST_VAULT}/00-Laura-Persona"
-MEMORY_VAULT_DIR="${PERSONA_VAULT_DIR}/memories"
+REPO_NAME=$(basename "$WORKDIR")
+REPO_WORKDIR="${HOST_AGENT_HOME}/${REPO_NAME}"
+HERMES_STATEFUL_DATA_DIR="${HOST_VAULT}/00-Laura-Persona"
 
 # ── User ─────────────────────────────────────────────────────────────────────
 info "Creating agent user: ${AGENT_USER}"
@@ -196,16 +195,6 @@ mountpoint -q "$HOST_VAULT" || error "vault-mount failed to start after 5 attemp
 # ── Hermes – Docker setup ─────────────────────────────────────────────────────
 info "Setting up Hermes Agent via Docker..."
 
-mkdir -p "${REPO_WORKDIR}/skills"
-chmod -R 777 "${REPO_WORKDIR}/skills"
-chown -R "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}"
-mkdir -p "$HOST_BIND_CONTAINER_HOME_DIR"
-chown "${AGENT_USER}:${AGENT_USER}" "$HOST_BIND_CONTAINER_HOME_DIR"
-mkdir -p "$MEMORY_VAULT_DIR"
-mkdir -p "${MEMORY_VAULT_DIR}/persist-memories"
-touch "${MEMORY_VAULT_DIR}/state.db"
-touch "${MEMORY_VAULT_DIR}/memory-graph.json"
-chown -R "${AGENT_USER}:${AGENT_USER}" "$MEMORY_VAULT_DIR"
 
 # Write .env file (lives in repo root, gitignored)
 DOTENV_PATH="${REPO_WORKDIR}/.env"
@@ -219,17 +208,6 @@ EOF
 chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
 chmod 644 "$DOTENV_PATH"
 
-# ── BOOTSTRAP.md ──────────────────────────────────────────────────────────────
-info "Writing BOOTSTRAP.md..."
-cat > "${REPO_WORKDIR}/BOOTSTRAP.md" <<BOOTSTRAPMD
-# Bootstrap
-Before doing anything else, read the full contents of
-/vault/00-Laura-Persona/AGENTS.md and follow all
-instructions within it.
-Do not proceed until you have read that file.
-BOOTSTRAPMD
-chown "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}/BOOTSTRAP.md"
-
 # Write docker-compose.yml (lives in repo root)
 COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
 cat > "$COMPOSE_FILE" <<COMPOSE
@@ -239,19 +217,14 @@ services:
     container_name: hermes-agent
     restart: unless-stopped
     command: gateway run
-    env_file:
-      - .env
     environment:
       - HERMES_UID=$(id -u "$AGENT_USER")
       - HERMES_GID=$(id -g "$AGENT_USER")
     volumes:
-      - ${HOST_BIND_CONTAINER_HOME_DIR}:/opt/data/home
+      - ${HERMES_STATEFUL_DATA_DIR}:/opt/data
+      - ${REPO_WORKDIR}:/opt/data/project/${REPO_NAME}
       - ${REPO_WORKDIR}/.env:/opt/data/.env
-      - ${REPO_WORKDIR}/BOOTSTRAP.md:/opt/data/SOUL.md
       - ${REPO_WORKDIR}/skills:/opt/data/skills
-      - ${MEMORY_VAULT_DIR}/state.db:/opt/data/state.db
-      - ${MEMORY_VAULT_DIR}/persist-memories:/opt/data/memories
-      - ${MEMORY_VAULT_DIR}/memory-graph.json:/opt/data/memory-graph.json
       - ${HOST_VAULT}:/vault
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: host
