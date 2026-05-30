@@ -19,6 +19,7 @@ export R2_BUCKET_NAME="${r2_bucket_name}"
 export DISCORD_BOT_TOKEN="${discord_bot_token}"
 export TIMEZONE="${timezone}"
 export OLLAMA_API_KEY="${ollama_api_key}"
+export HERMES_IMAGE="${hermes_image}"
 
 # ── Clone repo ──
 apt-get install -y -qq git
