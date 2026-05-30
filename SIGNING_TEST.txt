@@ -1,0 +1,1 @@
+Verification of GPG signing in custom image
