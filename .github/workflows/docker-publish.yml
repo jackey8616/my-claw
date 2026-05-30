@@ -2,7 +2,7 @@ name: Docker Image Publish
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "deploy" ]
     paths:
       - 'Dockerfile'
   workflow_dispatch:
