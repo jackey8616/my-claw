@@ -27,13 +27,33 @@ warning() { echo -e "${YELLOW}Warning:${NC} $1"; }
 error()   { echo -e "${RED}Error:${NC} $1"; exit 1; }
 pause()   { $NON_INTERACTIVE && return; read -p "$1 [Press Enter to continue]"; }
 
+# Helper to apply templates by replacing {{VAR}} with current shell variables
+apply_template() {
+  local template_path=$1
+  local output_path=$2
+  info "Applying template ${template_path} -> ${output_path}"
+  
+  local content
+  content=$(cat "$template_path")
+  
+  # Replace common placeholders. We use a loop to handle all defined variables.
+  # This regex finds all {{VAR_NAME}} patterns and replaces them with the value of the shell variable VAR_NAME.
+  while [[ $content =~ \{\{([A-Z0-9_]+)\}\} ]]; do
+    local var_name="${BASH_REMATCH[1]}"
+    local var_value="${!var_name}"
+    content="${content//\{\{$var_name\}\}/$var_value}"
+  done
+  
+  echo "$content" > "$output_path"
+}
+
 update_env() {
   local var_name=$1
   local var_value=$2
   if grep -q "^${var_name}=" .env 2>/dev/null; then
-    sed -i "s|^${var_name}=.*|${var_name}=\"${var_value}\"|" .env
+    sed -i "s|^${var_name}=.*|${var_name}=\"\${var_value}\"|" .env
   else
-    echo "${var_name}=\"${var_value}\"" >> .env
+    echo "${var_name}=\"\${var_value}\"" >> .env
   fi
 }
 
@@ -66,7 +86,7 @@ DISCORD_BOT_TOKEN=$(load_env "DISCORD_BOT_TOKEN" "Discord Bot Token")
 OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone")
 
-# Docker image for Hermes Agent – override via env if you use a private registry
+# Docker image for Hermes Agent
 HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
 
 HOST_AGENT_HOME="/home/${AGENT_USER}"
@@ -75,6 +95,10 @@ WORKDIR=$(pwd)
 REPO_NAME=$(basename "$WORKDIR")
 REPO_WORKDIR="${HOST_AGENT_HOME}/${REPO_NAME}"
 HERMES_STATEFUL_DATA_DIR="${HOST_VAULT}/00-Laura-Persona"
+
+# Template Variables
+AGENT_UID=$(id -u "$AGENT_USER" 2>/dev/null || echo 1000)
+AGENT_GID=$(id -g "$AGENT_USER" 2>/dev/null || echo 1000)
 
 # ── User ─────────────────────────────────────────────────────────────────────
 info "Creating agent user: ${AGENT_USER}"
@@ -94,7 +118,6 @@ info "Installing base packages..."
 apt-get "${APT_OPTS[@]}" install -y -qq \
   unzip jq curl fuse3
 
-# Allow FUSE mounts to be visible to other users (e.g. Docker daemon running as root)
 info "Configuring FUSE..."
 sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
 
@@ -153,29 +176,7 @@ mkdir -p "$HOST_VAULT"
 chown -R "${AGENT_USER}:${AGENT_USER}" "$HOST_VAULT"
 
 RCLONE_BIN=$(which rclone)
-cat > /etc/systemd/system/vault-mount.service <<SYSTEMD
-[Unit]
-Description=rclone R2 vault FUSE mount
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-User=${AGENT_USER}
-ExecStartPre=/bin/mkdir -p ${HOST_VAULT}
-ExecStart=${RCLONE_BIN} mount r2:${R2_BUCKET_NAME} ${HOST_VAULT} \
-  --vfs-cache-mode full \
-  --vfs-cache-max-age 24h \
-  --vfs-cache-max-size 500M \
-  --allow-other \
-  --log-level INFO
-ExecStop=/bin/fusermount -uz ${HOST_VAULT}
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-SYSTEMD
+apply_template "templates/vault-mount.service.tpl" "/etc/systemd/system/vault-mount.service"
 
 systemctl daemon-reload
 systemctl enable vault-mount.service
@@ -191,12 +192,9 @@ for i in $(seq 1 5); do
 done
 mountpoint -q "$HOST_VAULT" || error "vault-mount failed to start after 5 attempts"
 
-
 # ── Hermes – Docker setup ─────────────────────────────────────────────────────
 info "Setting up Hermes Agent via Docker..."
 
-
-# Write .env file (lives in repo root, gitignored)
 DOTENV_PATH="${REPO_WORKDIR}/.env"
 cat > "$DOTENV_PATH" <<EOF
 OLLAMA_API_KEY=${OLLAMA_API_KEY}
@@ -208,60 +206,18 @@ EOF
 chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
 chmod 644 "$DOTENV_PATH"
 
-# Write docker-compose.yml (lives in repo root)
-COMPOSE_FILE="${REPO_WORKDIR}/docker-compose.yml"
-cat > "$COMPOSE_FILE" <<COMPOSE
-services:
-  hermes:
-    image: ${HERMES_IMAGE}
-    container_name: hermes-agent
-    restart: unless-stopped
-    command: gateway run
-    environment:
-      - HERMES_UID=$(id -u "$AGENT_USER")
-      - HERMES_GID=$(id -g "$AGENT_USER")
-    volumes:
-      - ${HERMES_STATEFUL_DATA_DIR}:/opt/data
-      - ${REPO_WORKDIR}:/opt/data/project/${REPO_NAME}
-      - ${REPO_WORKDIR}/.env:/opt/data/.env
-      - ${REPO_WORKDIR}/skills:/opt/data/skills
-      - ${HOST_VAULT}:/vault
-      - /var/run/docker.sock:/var/run/docker.sock
-    network_mode: host
-COMPOSE
-chown "${AGENT_USER}:${AGENT_USER}" "$COMPOSE_FILE"
+# Apply docker-compose template
+apply_template "templates/docker-compose.yml.tpl" "${REPO_WORKDIR}/docker-compose.yml"
+chown "${AGENT_USER}:${AGENT_USER}" "${REPO_WORKDIR}/docker-compose.yml"
 
-# ── systemd service (runs docker compose as agent user) ───────────────────────
+# Install systemd service
 info "Installing Hermes systemd service..."
-
 loginctl enable-linger "$AGENT_USER"
-
-cat > /etc/systemd/system/hermes-agent.service <<SYSTEMD
-[Unit]
-Description=Hermes Agent (Docker Compose)
-After=docker.service vault-mount.service network-online.target
-Requires=docker.service
-Wants=vault-mount.service network-online.target
-
-[Service]
-Type=simple
-User=${AGENT_USER}
-SupplementaryGroups=docker
-WorkingDirectory=${REPO_WORKDIR}
-ExecStartPre=/usr/bin/docker compose pull --quiet
-ExecStart=/usr/bin/docker compose up --remove-orphans
-ExecStop=/usr/bin/docker compose down
-Restart=on-failure
-RestartSec=15
-
-[Install]
-WantedBy=multi-user.target
-SYSTEMD
+apply_template "templates/hermes-agent.service.tpl" "/etc/systemd/system/hermes-agent.service"
 
 systemctl daemon-reload
 systemctl enable hermes-agent.service
 systemctl restart hermes-agent.service || warning "hermes-agent failed to start – check: journalctl -u hermes-agent"
-
 
 # ── Sudoers ───────────────────────────────────────────────────────────────────
 info "Configuring sudoers for ${AGENT_USER}..."
@@ -293,4 +249,4 @@ echo "  Hermes container:  sudo systemctl status hermes-agent"
 echo "  Live logs:         journalctl -u hermes-agent -f"
 echo "  Compose dir:       ${REPO_WORKDIR}"
 echo "  Vault mount:       ${HOST_VAULT}"
-echo "========================================================="
+echo "========================================================"
