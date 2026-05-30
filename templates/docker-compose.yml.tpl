@@ -11,7 +11,13 @@ services:
       - {{HERMES_STATEFUL_DATA_DIR}}:/opt/data
       - {{REPO_WORKDIR}}:/opt/data/project/{{REPO_NAME}}
       - {{REPO_WORKDIR}}/.env:/opt/data/.env
-      - {{REPO_WORKDIR}}/skills:/opt/data/skills
       - {{HOST_VAULT}}:/vault
       - /var/run/docker.sock:/var/run/docker.sock
-    network_mode: host
+    ports:
+      - "8642:8642"
+    networks:
+      - hermes-net
+
+networks:
+  hermes-net:
+    driver: bridge
