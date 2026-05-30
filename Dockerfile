@@ -37,3 +37,4 @@ RUN mkdir -p /home/hermes/.gnupg && chown -R hermes:hermes /home/hermes/.gnupg &
 # Switch back to the hermes user
 USER hermes
 WORKDIR /opt/data
+# Build trigger update
