@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: jackey8616/hermes-agent
+  IMAGE_NAME: jackey8616/my-claw
 
 jobs:
   build-and-push:
