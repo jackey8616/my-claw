@@ -18,13 +18,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install GitHub CLI via direct binary download (more robust than apt in containers)
-RUN curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
-    | grep "browser_download_url" \
-    | grep "linux_amd64.tar.gz" \
-    | cut -d '"' -f 4 \
-    | xargs wget -qO- | tar -xzf - -C /usr/local/bin gh \
-    && chmod +x /usr/local/bin/gh
+# Install GitHub CLI via direct binary download
+# 1. Find latest linux_amd64.tar.gz URL
+# 2. Download and extract to /tmp
+# 3. Move the actual 'gh' binary to /usr/local/bin
+RUN export GH_URL=$(curl -s https://api.github.com/repos/cli/cli/releases/latest | grep "browser_download_url" | grep "linux_amd64.tar.gz" | cut -d '"' -f 4) && \
+    wget -qO- "$GH_URL" | tar -xz -C /tmp && \
+    find /tmp -name gh -type f -exec mv {} /usr/local/bin/gh \; && \
+    chmod +x /usr/local/bin/gh && \
+    rm -rf /tmp/*
 
 # Configure passwordless sudo for the hermes user (UID 1000)
 RUN echo "hermes ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
