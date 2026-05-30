@@ -87,7 +87,7 @@ OLLAMA_API_KEY=$(load_env "OLLAMA_API_KEY" "Ollama API Key")
 TIMEZONE=$(load_env "TIMEZONE" "Timezone")
 
 # Docker image for Hermes Agent
-HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
+HERMES_IMAGE=$(load_env "HERMES_IMAGE" "Docker image for Hermes Agent (e.g. ghcr.io/...)")
 
 HOST_AGENT_HOME="/home/${AGENT_USER}"
 HOST_VAULT="${HOST_AGENT_HOME}/vault"
@@ -202,6 +202,7 @@ DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
 DISCORD_ALLOWED_USERS=201941454946304001
 DISCORD_HOME_CHANNEL=1486128557444042883
 TZ=${TIMEZONE}
+HERMES_IMAGE=${HERMES_IMAGE}
 EOF
 chown "${AGENT_USER}:${AGENT_USER}" "$DOTENV_PATH"
 chmod 644 "$DOTENV_PATH"
