@@ -6,7 +6,8 @@
 #   agent_user, r2_account_id, r2_access_key_id, r2_secret_access_key,
 #   r2_bucket_name, discord_bot_token, claude_oauth_token, timezone, repo_url,
 #   gh_token (optional; GitHub enabled when set AND vault GPG key exists after mount),
-#   ollama_api_key (optional; used for cloud-based Ollama models)
+#   ollama_api_key (optional; used for cloud-based Ollama models),
+#   hermes_image (The Docker image to use for Hermes Agent)
 set -euo pipefail
 
 # ── Inject secrets as env vars (never written to disk as plaintext) ──
