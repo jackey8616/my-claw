@@ -23,7 +23,7 @@ RUN curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
     | grep "browser_download_url" \
     | grep "linux_amd64.tar.gz" \
     | cut -d '"' -f 4 \
-    | xargs wget -qO- | tar -xZ -C /usr/local/bin gh \
+    | xargs wget -qO- | tar -xzf - -C /usr/local/bin gh \
     && chmod +x /usr/local/bin/gh
 
 # Configure passwordless sudo for the hermes user (UID 1000)
@@ -35,4 +35,3 @@ RUN mkdir -p /home/hermes/.gnupg && chown -R hermes:hermes /home/hermes/.gnupg &
 # Switch back to the hermes user
 USER hermes
 WORKDIR /opt/data
-# Trigger build
