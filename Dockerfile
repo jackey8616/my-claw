@@ -34,7 +34,4 @@ RUN echo "hermes ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 # Setup GPG home directory
 RUN mkdir -p /home/hermes/.gnupg && chown -R hermes:hermes /home/hermes/.gnupg && chmod 700 /home/hermes/.gnupg
 
-# Switch back to the hermes user
-USER hermes
 WORKDIR /opt/data
-# Build trigger update
